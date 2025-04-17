@@ -80,31 +80,68 @@ io.on('connection', (socket) => {
     });
   });
   
-  // Handle bullet hit detection
-  socket.on('bulletHit', (data) => {
-    const { targetId } = data;
+// Handle bullet hit detection
+socket.on('bulletHit', (data) => {
+  const { targetId } = data;
+  
+  // Validate target exists and is not already dead
+  if (!players[targetId] || players[targetId].isDead) return;
+  
+  // Record who hit this player
+  players[targetId].lastHitBy = socket.id;
+  
+  // Reduce target health
+  players[targetId].health -= 1;
+  
+  // Broadcast damage to all players
+  io.emit('playerDamaged', {
+    playerId: targetId,
+    health: players[targetId].health,
+    shooterId: socket.id
+  });
+  
+  // Check if player died from this hit
+  if (players[targetId].health <= 0 && !players[targetId].isDead) {
+    handlePlayerDeath(targetId, socket.id);
+  }
+});
+
+// Add this inside your socket.on('connection') handler, with the other event handlers
+
+// Handle player being hit by a bullet
+socket.on('bulletHitMe', (data) => {
+  const { shooterId } = data;
+  
+  // Validate shooter exists and this player is not already dead
+  if (!players[shooterId] || !players[socket.id] || players[socket.id].isDead) return;
+  
+  // Record who hit this player
+  players[socket.id].lastHitBy = shooterId;
+  
+  // Reduce health
+  players[socket.id].health -= 1;
+  
+  // Broadcast damage to all players
+  io.emit('playerDamaged', {
+    playerId: socket.id,
+    health: players[socket.id].health,
+    shooterId: shooterId
+  });
+  
+  // Check if player died from this hit
+  if (players[socket.id].health <= 0 && !players[socket.id].isDead) {
+    // Mark player as dead
+    players[socket.id].isDead = true;
     
-    // Validate target exists and is not already dead
-    if (!players[targetId] || players[targetId].isDead) return;
-    
-    // Record who hit this player
-    players[targetId].lastHitBy = socket.id;
-    
-    // Reduce target health
-    players[targetId].health -= 1;
-    
-    // Broadcast damage to all players
-    io.emit('playerDamaged', {
-      playerId: targetId,
-      health: players[targetId].health,
-      shooterId: socket.id
+    // Broadcast death to all players
+    io.emit('playerDied', {
+      playerId: socket.id,
+      killedBy: shooterId
     });
     
-    // Check if player died from this hit
-    if (players[targetId].health <= 0 && !players[targetId].isDead) {
-      handlePlayerDeath(targetId, socket.id);
-    }
-  });
+    // Player's client will handle their own respawn timing and notify server when ready
+  }
+});
   
   // Handle player death signal from client
   socket.on('playerDied', () => {

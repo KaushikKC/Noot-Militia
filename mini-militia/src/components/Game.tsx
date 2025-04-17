@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
@@ -13,7 +14,7 @@ export default function Game() {
     
     // Variables to store game objects
     let platforms: Phaser.Physics.Arcade.StaticGroup;
-    let player: Phaser.Physics.Arcade.Sprite;
+    let player: Phaser.Physics.Arcade.Sprite | null = null;
     let bullets: Phaser.Physics.Arcade.Group;
     let cursors: Phaser.Types.Input.Keyboard.CursorKeys;
     let spaceKey: Phaser.Input.Keyboard.Key;
@@ -88,7 +89,10 @@ export default function Game() {
     // Function to spawn player at a specific spawn point
     function spawnPlayer(scene: Phaser.Scene, spawnPointIndex: number = 0) {
       // Check if the scene is still active
-      if (!scene.scene.isActive()) return;
+      if (!scene.scene.isActive()) {
+        console.log("Scene is not active, cannot spawn player");
+        return;
+      }
       
       // Reset player health
       playerHealth = 10;
@@ -112,10 +116,13 @@ export default function Game() {
         }
       });
       
+      // Get spawn point
+      const spawnPoint = SPAWN_POINTS[spawnPointIndex % SPAWN_POINTS.length];
+      
       if (!player) {
         try {
+          console.log("Creating new player at", spawnPoint.x, spawnPoint.y);
           // Create player sprite at the specified spawn point
-          const spawnPoint = SPAWN_POINTS[spawnPointIndex % SPAWN_POINTS.length];
           player = scene.physics.add.sprite(spawnPoint.x, spawnPoint.y, 'player');
           
           // Set player properties
@@ -161,10 +168,12 @@ export default function Game() {
         }
       } else {
         // Respawn existing player at the specified spawn point
-        const spawnPoint = SPAWN_POINTS[spawnPointIndex % SPAWN_POINTS.length];
+        console.log("Respawning existing player at", spawnPoint.x, spawnPoint.y);
+        player.setVisible(true);
         player.setPosition(spawnPoint.x, spawnPoint.y);
         player.setVelocity(0, 0);
         player.setData('health', playerHealth);
+        player.body.enable = true;
         
         // Make player flash to indicate invulnerability
         scene.tweens.add({
@@ -263,63 +272,71 @@ export default function Game() {
       });
       
       // Handle player health updates
-      socket.on('playerDamaged', (data: any) => {
-        if (!scene.scene.isActive()) return;
-        
-        if (data.playerId === socket.id) {
-          // We were hit
-          playerHealth = data.health;
-          if (healthText) {
-            healthText.setText(`Health: ${playerHealth}`);
-          }
-          
-          // Flash the camera to indicate damage
-          scene.cameras.main.flash(100, 255, 0, 0, 0.3);
-          
-          // Check if we died
-          if (playerHealth <= 0 && !respawnCooldown) {
-            playerDied(scene);
-          }
-          
-          // Show damage number floating up
-          const damageText = scene.add.text(
-            player.x, 
-            player.y - 20, 
-            "-1", 
-            { fontSize: '22px', color: '#ff0000', stroke: '#000', strokeThickness: 3 }
-          );
-          
-          scene.tweens.add({
-            targets: damageText,
-            y: player.y - 60,
-            alpha: 0,
-            duration: 800,
-            onComplete: () => damageText.destroy()
-          });
-        } else {
-          // Another player was hit
-          const otherPlayer = otherPlayers.get(data.playerId);
-          if (otherPlayer) {
-            otherPlayer.setData('health', data.health);
-            
-            // Show damage number floating up
-            const damageText = scene.add.text(
-              otherPlayer.x, 
-              otherPlayer.y - 20, 
-              "-1", 
-              { fontSize: '18px', color: '#ff0000', stroke: '#000', strokeThickness: 2 }
-            );
-            
-            scene.tweens.add({
-              targets: damageText,
-              y: otherPlayer.y - 50,
-              alpha: 0,
-              duration: 500,
-              onComplete: () => damageText.destroy()
-            });
-          }
-        }
+socket.on('playerDamaged', (data: any) => {
+  if (!scene.scene.isActive()) return;
+  
+  if (data.playerId === socket.id) {
+    // Log to debug
+    console.log(`Player damaged! Old health: ${playerHealth}, New health: ${data.health}`);
+    
+    // Update our health
+    playerHealth = data.health;
+    
+    // Update the health display
+    if (healthText) {
+      healthText.setText(`Health: ${playerHealth}`);
+    }
+    
+    // Flash the camera to indicate damage
+    scene.cameras.main.flash(100, 255, 0, 0, 0.3);
+    
+    // Show damage number floating up
+    if (player) {
+      const damageText = scene.add.text(
+        player.x, 
+        player.y - 20, 
+        "-1", 
+        { fontSize: '22px', color: '#ff0000', stroke: '#000', strokeThickness: 3 }
+      );
+      
+      scene.tweens.add({
+        targets: damageText,
+        y: player.y - 60,
+        alpha: 0,
+        duration: 800,
+        onComplete: () => damageText.destroy()
       });
+    }
+    
+    // Check if we died (only if our health is 0 or less)
+    if (playerHealth <= 0 && !respawnCooldown && player) {
+      console.log("Player died! Health reached zero.");
+      playerDied(scene);
+    }
+  } else {
+    // Another player was hit
+    const otherPlayer = otherPlayers.get(data.playerId);
+    if (otherPlayer) {
+      otherPlayer.setData('health', data.health);
+      
+      // Show damage number floating up
+      const damageText = scene.add.text(
+        otherPlayer.x, 
+        otherPlayer.y - 20, 
+        "-1", 
+        { fontSize: '18px', color: '#ff0000', stroke: '#000', strokeThickness: 2 }
+      );
+      
+      scene.tweens.add({
+        targets: damageText,
+        y: otherPlayer.y - 50,
+        alpha: 0,
+        duration: 500,
+        onComplete: () => damageText.destroy()
+      });
+    }
+  }
+});
       
       // Handle player death events
       socket.on('playerDied', (data: any) => {
@@ -328,7 +345,7 @@ export default function Game() {
         if (data.playerId === socket.id) {
           // We died - will be handled by our own death logic
           // This is just a backup in case client-side detection fails
-          if (playerHealth > 0) {
+          if (playerHealth > 0 && player) {
             playerHealth = 0;
             playerDied(scene);
           }
@@ -425,20 +442,15 @@ export default function Game() {
         // Add collision with platforms
         scene.physics.add.collider(otherPlayer, platforms);
         
-        // Store in our map
-        otherPlayers.set(playerInfo.playerId, otherPlayer);
-        
         // Add collision with bullets
         scene.physics.add.overlap(bullets, otherPlayer, (bullet: any, target: any) => {
-          // Only process bullet collision if the bullet wasn't fired by this player
-          if (bullet.getData('owner') !== target.getData('playerId')) {
+          // Only process bullet collision if the bullet was fired by this player
+          if (bullet.getData('owner') === socket?.id) {
             // If this is our bullet hitting another player
-            if (bullet.getData('owner') === socket.id) {
-              // Emit hit event to server
-              socket.emit('bulletHit', {
-                targetId: target.getData('playerId')
-              });
-            }
+            // Emit hit event to server
+            socket.emit('bulletHit', {
+              targetId: target.getData('playerId')
+            });
             
             // Create hit effect
             const hitEffect = scene.add.circle(bullet.x, bullet.y, 10, 0xff0000, 0.7);
@@ -458,6 +470,10 @@ export default function Game() {
             bullet.destroy();
           }
         }, undefined, scene);
+        
+        // Store in our map
+        otherPlayers.set(playerInfo.playerId, otherPlayer);
+        
       } catch (error) {
         console.error('Error adding other player:', error);
       }
@@ -465,8 +481,16 @@ export default function Game() {
     
     // Function to handle player death
     function playerDied(scene: Phaser.Scene) {
-      if (!player || respawnCooldown) return;
+      // Add debug logging
+      console.log("playerDied function called. Player health:", playerHealth);
       
+      // Safety checks
+      if (!player || respawnCooldown) {
+        console.log("Early return from playerDied: Player doesn't exist or respawn cooldown active");
+        return;
+      }
+      
+      // Set respawn cooldown flag to prevent multiple deaths
       respawnCooldown = true;
       
       // Show death message
@@ -499,10 +523,10 @@ export default function Game() {
         onComplete: () => deathEffect.destroy()
       });
       
-      // Make player invisible (but keep the object)
+      // Make player invisible during respawn (but keep the object)
       player.setVisible(false);
       
-      // Make player unable to move
+      // Disable player movement during respawn
       player.setVelocity(0, 0);
       player.body.enable = false;
       
@@ -513,18 +537,18 @@ export default function Game() {
       
       // Set respawn timer
       scene.time.delayedCall(3000, () => {
+        console.log("Respawn timer completed. Respawning player...");
+        
         // Hide death message
         if (deathMessageText) {
           deathMessageText.setVisible(false);
         }
         
-        // Respawn player
-        player.setVisible(true);
-        player.body.enable = true;
+        // Respawn at random spawn point
         spawnPlayer(scene, Math.floor(Math.random() * SPAWN_POINTS.length));
         
         // Notify server of respawn
-        if (socket) {
+        if (socket && player) {
           socket.emit('playerRespawned', {
             x: player.x,
             y: player.y
@@ -535,6 +559,8 @@ export default function Game() {
 
     // Function to fire a bullet
     function fireBullet(scene: Phaser.Scene) {
+      if (!player) return;
+      
       const time = scene.time.now;
       
       // Cooldown of 200ms between shots
@@ -723,7 +749,7 @@ export default function Game() {
       });
     }
 
-    // Create game objects
+
     function create(this: Phaser.Scene) {
       try {
         // Set world bounds for a larger game area
@@ -780,7 +806,7 @@ export default function Game() {
           stroke: '#000',
           strokeThickness: 4
         }).setScrollFactor(0);
-
+    
         // Add health display
         healthText = this.add.text(20, 220, `Health: ${playerHealth}`, {
           fontSize: '18px',
@@ -803,258 +829,296 @@ export default function Game() {
             padding: { x: 20, y: 10 }
           }
         ).setOrigin(0.5).setScrollFactor(0).setDepth(1000).setVisible(false);
-
-
-    // Add fullscreen button (fixed to camera)
-    const fullscreenButton = this.add.text(this.cameras.main.width - 20, 20, '[ Fullscreen ]', {
-      fontSize: '18px',
-      color: '#ffffff',
-      stroke: '#000',
-      strokeThickness: 2
-    }).setOrigin(1, 0).setInteractive().setScrollFactor(0).setName('fullscreenButton');
-
-    fullscreenButton.on('pointerup', () => {
-      if (this.scale.isFullscreen) {
-        this.scale.stopFullscreen();
-        setIsFullscreen(false);
-      } else {
-        this.scale.startFullscreen();
-        setIsFullscreen(true);
-      }
-    });
-
-    // Listen for F key to toggle fullscreen
-    this.input.keyboard?.on('keydown-F', () => {
-      if (this.scale.isFullscreen) {
-        this.scale.stopFullscreen();
-        setIsFullscreen(false);
-      } else {
-        this.scale.startFullscreen();
-        setIsFullscreen(true);
-      }
-    });
-
-    // Listen for fullscreen change events from the browser
-    this.scale.on('enterfullscreen', () => {
-      setIsFullscreen(true);
-    });
-
-    this.scale.on('leavefullscreen', () => {
-      setIsFullscreen(false);
-    });
-
-    // Add respawn buttons for testing multiplayer spawn points
-    const respawnP1Button = this.add.text(20, this.cameras.main.height - 60, 'Respawn P1', {
-      fontSize: '18px',
-      color: '#fff',
-      backgroundColor: '#4a6fff',
-      padding: { x: 10, y: 5 }
-    }).setInteractive().setScrollFactor(0);
     
-   
-    const respawnP2Button = this.add.text(150, this.cameras.main.height - 60, 'Respawn P2', {
-      fontSize: '18px',
-      color: '#fff',
-      backgroundColor: '#ff4a4a',
-      padding: { x: 10, y: 5 }
-    }).setInteractive().setScrollFactor(0);
+        // Add fullscreen button (fixed to camera)
+        const fullscreenButton = this.add.text(this.cameras.main.width - 20, 20, '[ Fullscreen ]', {
+          fontSize: '18px',
+          color: '#ffffff',
+          stroke: '#000',
+          strokeThickness: 2
+        }).setOrigin(1, 0).setInteractive().setScrollFactor(0).setName('fullscreenButton');
     
-    respawnP1Button.on('pointerup', () => {
-      spawnPlayer(this, 0);
-    });
-    
-    respawnP2Button.on('pointerup', () => {
-      spawnPlayer(this, 1);
-    });
-
-    // Add instructions (fixed to camera)
-    this.add.text(20, 70, 'Use Arrow Keys or A/D to move', {
-      fontSize: '18px',
-      color: '#fff',
-      stroke: '#000',
-      strokeThickness: 2
-    }).setScrollFactor(0);
-    
-    this.add.text(20, 100, 'Use Up/W to jump', {
-      fontSize: '18px',
-      color: '#fff',
-      stroke: '#000',
-      strokeThickness: 2
-    }).setScrollFactor(0);
-    
-    this.add.text(20, 130, 'Press SPACE to fire bullets', {
-      fontSize: '18px',
-      color: '#fff',
-      stroke: '#000',
-      strokeThickness: 2
-    }).setScrollFactor(0);
-    
-    // Add world size indicator
-    this.add.text(20, 160, `World Size: ${WORLD_WIDTH}x${WORLD_HEIGHT}`, {
-      fontSize: '18px',
-      color: '#fff',
-      stroke: '#000',
-      strokeThickness: 2
-    }).setScrollFactor(0);
-    
-    // Add multiplayer status indicator
-    const multiplayerStatus = this.add.text(20, 190, 'Multiplayer: Connecting...', {
-      fontSize: '18px',
-      color: '#fff',
-      stroke: '#000',
-      strokeThickness: 2
-    }).setScrollFactor(0).setName('multiplayerStatus');
-    
-    // Add minimap (optional)
-    const minimapWidth = 200;
-    const minimapHeight = 100;
-    const minimapX = this.cameras.main.width - minimapWidth - 20;
-    const minimapY = this.cameras.main.height - minimapHeight - 20;
-    
-    // Create minimap camera
-    const minimapCamera = this.cameras.add(minimapX, minimapY, minimapWidth, minimapHeight)
-      .setZoom(minimapWidth / WORLD_WIDTH)
-      .setName('minimap')
-      .setBackgroundColor(0x002244)
-      .setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-    
-    // The camera itself doesn't need setScrollFactor as it's positioned absolutely
-    // We can add a player marker to the minimap instead
-    const minimapPlayerMarker = this.add.circle(0, 0, 4, 0xffffff)
-      .setDepth(1000) // Make sure it's above other elements
-      .setName('minimapPlayerMarker');
-    
-    // Add border around minimap
-    const minimapBorder = this.add.rectangle(
-      minimapX + minimapWidth / 2, 
-      minimapY + minimapHeight / 2, 
-      minimapWidth, 
-      minimapHeight, 
-      0x000000, 
-      0
-    ).setStrokeStyle(2, 0xffffff).setScrollFactor(0);
-    
-    // Add spawn point indicators on minimap
-    SPAWN_POINTS.forEach((point, index) => {
-      const color = index === 0 ? 0x4a6fff : 0xff4a4a;
-      const spawnMarker = this.add.circle(
-        minimapX + (point.x / WORLD_WIDTH) * minimapWidth,
-        minimapY + (point.y / WORLD_HEIGHT) * minimapHeight,
-        3, color
-      ).setAlpha(0.8);
-    });
-    
-    // Enable physics collision between bullets and platforms
-    this.physics.add.collider(bullets, platforms, bulletHitPlatform as any, undefined, this);
-    
-    // Set up collision between bullets and the local player
-    this.physics.add.overlap(bullets, player as any, (bullet: any, playerSprite: any) => {
-      // Only process if the bullet wasn't fired by this player
-      if (bullet.getData('owner') !== socket?.id) {
-        // If we're not invulnerable
-        if (!invulnerable) {
-          // Reduce health
-          playerHealth -= 1;
-          
-          // Update health display
-          if (healthText) {
-            healthText.setText(`Health: ${playerHealth}`);
+        fullscreenButton.on('pointerup', () => {
+          if (this.scale.isFullscreen) {
+            this.scale.stopFullscreen();
+            setIsFullscreen(false);
+          } else {
+            this.scale.startFullscreen();
+            setIsFullscreen(true);
           }
-          
-          // Flash the camera to indicate damage
-          this.cameras.main.flash(100, 255, 0, 0, 0.3);
-          
-          // Check if player died
-          if (playerHealth <= 0) {
-            playerDied(this);
+        });
+    
+        // Listen for F key to toggle fullscreen
+        this.input.keyboard?.on('keydown-F', () => {
+          if (this.scale.isFullscreen) {
+            this.scale.stopFullscreen();
+            setIsFullscreen(false);
+          } else {
+            this.scale.startFullscreen();
+            setIsFullscreen(true);
           }
-        }
+        });
+    
+        // Listen for fullscreen change events from the browser
+        this.scale.on('enterfullscreen', () => {
+          setIsFullscreen(true);
+        });
+    
+        this.scale.on('leavefullscreen', () => {
+          setIsFullscreen(false);
+        });
+    
+        // Add respawn buttons for testing multiplayer spawn points
+        const respawnP1Button = this.add.text(20, this.cameras.main.height - 60, 'Respawn P1', {
+          fontSize: '18px',
+          color: '#fff',
+          backgroundColor: '#4a6fff',
+          padding: { x: 10, y: 5 }
+        }).setInteractive().setScrollFactor(0);
         
-        // Create hit effect (whether invulnerable or not)
-        const hitEffect = this.add.circle(bullet.x, bullet.y, 10, 0xff0000, 0.7);
-        this.tweens.add({
-          targets: hitEffect,
-          alpha: 0,
-          scale: 2,
-          duration: 200,
-          onComplete: () => hitEffect.destroy()
+       
+        const respawnP2Button = this.add.text(150, this.cameras.main.height - 60, 'Respawn P2', {
+          fontSize: '18px',
+          color: '#fff',
+          backgroundColor: '#ff4a4a',
+          padding: { x: 10, y: 5 }
+        }).setInteractive().setScrollFactor(0);
+        
+        respawnP1Button.on('pointerup', () => {
+          spawnPlayer(this, 0);
         });
         
-        // Destroy the bullet and its effects
+        respawnP2Button.on('pointerup', () => {
+          spawnPlayer(this, 1);
+        });
+    
+        // Add instructions (fixed to camera)
+        this.add.text(20, 70, 'Use Arrow Keys or A/D to move', {
+          fontSize: '18px',
+          color: '#fff',
+          stroke: '#000',
+          strokeThickness: 2
+        }).setScrollFactor(0);
+        
+        this.add.text(20, 100, 'Use Up/W to jump', {
+          fontSize: '18px',
+          color: '#fff',
+          stroke: '#000',
+          strokeThickness: 2
+        }).setScrollFactor(0);
+        
+        this.add.text(20, 130, 'Press SPACE to fire bullets', {
+          fontSize: '18px',
+          color: '#fff',
+          stroke: '#000',
+          strokeThickness: 2
+        }).setScrollFactor(0);
+        
+        // Add world size indicator
+        this.add.text(20, 160, `World Size: ${WORLD_WIDTH}x${WORLD_HEIGHT}`, {
+          fontSize: '18px',
+          color: '#fff',
+          stroke: '#000',
+          strokeThickness: 2
+        }).setScrollFactor(0);
+        
+        // Add multiplayer status indicator
+        const multiplayerStatus = this.add.text(20, 190, 'Multiplayer: Connecting...', {
+          fontSize: '18px',
+          color: '#fff',
+          stroke: '#000',
+          strokeThickness: 2
+        }).setScrollFactor(0).setName('multiplayerStatus');
+        
+        // Add minimap (optional)
+        const minimapWidth = 200;
+        const minimapHeight = 100;
+        const minimapX = this.cameras.main.width - minimapWidth - 20;
+        const minimapY = this.cameras.main.height - minimapHeight - 20;
+        
+        // Create minimap camera
+        const minimapCamera = this.cameras.add(minimapX, minimapY, minimapWidth, minimapHeight)
+          .setZoom(minimapWidth / WORLD_WIDTH)
+          .setName('minimap')
+          .setBackgroundColor(0x002244)
+          .setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+        
+        // The camera itself doesn't need setScrollFactor as it's positioned absolutely
+        // We can add a player marker to the minimap instead
+        const minimapPlayerMarker = this.add.circle(0, 0, 4, 0xffffff)
+          .setDepth(1000) // Make sure it's above other elements
+          .setName('minimapPlayerMarker');
+        
+        // Add border around minimap
+        const minimapBorder = this.add.rectangle(
+          minimapX + minimapWidth / 2, 
+          minimapY + minimapHeight / 2, 
+          minimapWidth, 
+          minimapHeight, 
+          0x000000, 
+          0
+        ).setStrokeStyle(2, 0xffffff).setScrollFactor(0);
+        
+        // Add spawn point indicators on minimap
+        SPAWN_POINTS.forEach((point, index) => {
+          const color = index === 0 ? 0x4a6fff : 0xff4a4a;
+          const spawnMarker = this.add.circle(
+            minimapX + (point.x / WORLD_WIDTH) * minimapWidth,
+            minimapY + (point.y / WORLD_HEIGHT) * minimapHeight,
+            3, color
+          ).setAlpha(0.8);
+        });
+        
+        // Enable physics collision between bullets and platforms
+        this.physics.add.collider(bullets, platforms, bulletHitPlatform as any, undefined, this);
+        
+        // Spawn the player at the first spawn point - do this last to ensure everything else is ready
+        this.time.delayedCall(100, () => {
+          spawnPlayer(this, 0);
+          
+          // Set up collision between bullets and the local player
+
+// Set up collision between bullets and the local player
+this.physics.add.overlap(bullets, player, (bullet: any, playerSprite: any) => {
+  // Only process if the bullet wasn't fired by this player and player is not invulnerable
+  if (bullet.getData('owner') !== socket?.id && !invulnerable) {
+    // Create hit effect
+    const hitEffect = this.add.circle(bullet.x, bullet.y, 10, 0xff0000, 0.7);
+    this.tweens.add({
+      targets: hitEffect,
+      alpha: 0, 
+      scale: 2,
+      duration: 200,
+      onComplete: () => hitEffect.destroy()
+    });
+    
+    // Reduce player health locally - this is the key change
+    // We'll still let the server validate, but we update locally for immediate feedback
+    playerHealth = Math.max(0, playerHealth - 1);
+    
+    // Update the health display immediately
+    if (healthText) {
+      healthText.setText(`Health: ${playerHealth}`);
+    }
+    
+    // Notify server about hit - only if we're hit by another player's bullet
+    if (socket) {
+      socket.emit('bulletHitMe', {
+        shooterId: bullet.getData('owner')
+      });
+    }
+    
+    // Flash camera to indicate damage
+    this.cameras.main.flash(100, 255, 0, 0, 0.3);
+    
+    // Show damage number floating up
+    const damageText = this.add.text(
+      player.x, 
+      player.y - 20, 
+      "-1", 
+      { fontSize: '22px', color: '#ff0000', stroke: '#000', strokeThickness: 3 }
+    );
+    
+    this.tweens.add({
+      targets: damageText,
+      y: player.y - 60,
+      alpha: 0,
+      duration: 800,
+      onComplete: () => damageText.destroy()
+    });
+    
+    // Destroy the bullet and its effects
+    const emitter = bullet.getData('emitter');
+    if (emitter) {
+      emitter.destroy();
+    }
+    bullet.destroy();
+    
+    // Only call playerDied if health reaches zero
+    if (playerHealth <= 0 && !respawnCooldown) {
+      console.log("Player health reached zero, calling playerDied");
+      playerDied(this);
+    }
+  }
+}, undefined, this);
+        });
+        
+      } catch (error) {
+        console.error('Error in create function:', error);
+      }
+    }
+
+
+// Update game state (runs on every frame)
+function update(this: Phaser.Scene) {
+  // Add a strong null check at the top
+  if (!player || !player.body || !player.body.enable || !cursors) return;
+  
+  // Handle left and right movement
+  if (cursors.left.isDown || this.input.keyboard?.checkDown(this.input.keyboard.addKey('A'))) {
+    // Move left
+    if (player && player.body && player.body.enable) {
+      player.setVelocityX(-160);
+      player.setFlipX(true); // Flip the sprite to face left
+      player.anims.play('left', true);
+    }
+  } else if (cursors.right.isDown || this.input.keyboard?.checkDown(this.input.keyboard.addKey('D'))) {
+    // Move right
+    if (player && player.body && player.body.enable) {
+      player.setVelocityX(160);
+      player.setFlipX(false); // Reset the sprite to face right
+      player.anims.play('right', true);
+    }
+  } else {
+    // Stand still
+    if (player && player.body && player.body.enable) {
+      player.setVelocityX(0);
+      player.anims.play('turn');
+    }
+  }
+  
+  // Allow jumping if touching the ground, but NOT with spacebar
+  if ((cursors.up.isDown || this.input.keyboard?.checkDown(this.input.keyboard.addKey('W'))) && 
+      player && player.body && player.body.enable && player.body.touching.down) {
+    player.setVelocityY(-330);
+  }
+  
+  // Fire bullet with spacebar
+  if (spaceKey && spaceKey.isDown) {
+    if (player && player.visible && player.body && player.body.enable) {
+      fireBullet(this);
+    }
+  }
+  
+  // Clean up bullets that are out of bounds
+  if (bullets) {
+    bullets.getChildren().forEach((bullet: any) => {
+      if (bullet.x < -50 || bullet.x > WORLD_WIDTH + 50 || 
+          bullet.y < -50 || bullet.y > WORLD_HEIGHT + 50) {
+        // Clean up particle effects
         const emitter = bullet.getData('emitter');
         if (emitter) {
           emitter.destroy();
         }
         bullet.destroy();
       }
-    }, undefined, this);
-    
-    // Spawn the player at the first spawn point - do this last to ensure everything else is ready
-    this.time.delayedCall(100, () => {
-      spawnPlayer(this, 0);
     });
-  } catch (error) {
-    console.error('Error in create function:', error);
   }
-}
-
-// Update game state (runs on every frame)
-function update(this: Phaser.Scene) {
-  if (!cursors || !player) return;
-  
-  // Handle left and right movement
-  if (cursors.left.isDown || this.input.keyboard?.checkDown(this.input.keyboard.addKey('A'))) {
-    // Move left
-    player.setVelocityX(-160);
-    player.setFlipX(true); // Flip the sprite to face left
-    player.anims.play('left', true);
-  } else if (cursors.right.isDown || this.input.keyboard?.checkDown(this.input.keyboard.addKey('D'))) {
-    // Move right
-    player.setVelocityX(160);
-    player.setFlipX(false); // Reset the sprite to face right
-    player.anims.play('right', true);
-  } else {
-    // Stand still
-    player.setVelocityX(0);
-    player.anims.play('turn');
-  }
-  
-  // Allow jumping if touching the ground, but NOT with spacebar
-  if ((cursors.up.isDown || this.input.keyboard?.checkDown(this.input.keyboard.addKey('W'))) && 
-      player.body.touching.down) {
-    player.setVelocityY(-330);
-  }
-  
-  // Fire bullet with spacebar
-  if (spaceKey.isDown) {
-    fireBullet(this);
-  }
-  
-  // Clean up bullets that are out of bounds
-  bullets.getChildren().forEach((bullet: any) => {
-    if (bullet.x < -50 || bullet.x > WORLD_WIDTH + 50 || 
-        bullet.y < -50 || bullet.y > WORLD_HEIGHT + 50) {
-      // Clean up particle effects
-      const emitter = bullet.getData('emitter');
-      if (emitter) {
-        emitter.destroy();
-      }
-      bullet.destroy();
-    }
-  });
   
   // Update minimap player marker position
-  const minimapPlayerMarker = this.children.getByName('minimapPlayerMarker');
-  if (minimapPlayerMarker && player.visible) {
-    const minimapWidth = 200;
-    const minimapHeight = 100;
-    const minimapX = this.cameras.main.width - minimapWidth - 20;
-    const minimapY = this.cameras.main.height - minimapHeight - 20;
-    
-    minimapPlayerMarker.setPosition(
-      minimapX + (player.x / WORLD_WIDTH) * minimapWidth,
-      minimapY + (player.y / WORLD_HEIGHT) * minimapHeight
-    );
+  if (player && player.visible) {
+    const minimapPlayerMarker = this.children.getByName('minimapPlayerMarker');
+    if (minimapPlayerMarker) {
+      const minimapWidth = 200;
+      const minimapHeight = 100;
+      const minimapX = this.cameras.main.width - minimapWidth - 20;
+      const minimapY = this.cameras.main.height - minimapHeight - 20;
+      
+      minimapPlayerMarker.setPosition(
+        minimapX + (player.x / WORLD_WIDTH) * minimapWidth,
+        minimapY + (player.y / WORLD_HEIGHT) * minimapHeight
+      );
+    }
   }
   
   // Update UI elements that need to follow the camera
@@ -1069,7 +1133,7 @@ function update(this: Phaser.Scene) {
   }
   
   // Send position updates to server if player has moved and is alive
-  if (player && player.visible && socket) {
+  if (player && player.visible && player.body && player.body.enable && socket) {
     const x = player.x;
     const y = player.y;
     const flipX = player.flipX;
@@ -1121,6 +1185,7 @@ function update(this: Phaser.Scene) {
     healthText.setPosition(20, 220);
   }
 }
+
 
     // Add window resize listener
     window.addEventListener('resize', updateDimensions);
