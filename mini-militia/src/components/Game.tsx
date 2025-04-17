@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
@@ -20,56 +19,80 @@ export default function Game() {
     let game: Phaser.Game;
     let lastFired = 0; // Timestamp of last bullet fired
     
-    // Handle responsive canvas sizing and update ground
+    // Game world configuration
+    const WORLD_WIDTH = 3200; // Much wider world
+    const WORLD_HEIGHT = 800; // Taller world
+    const GROUND_HEIGHT = 64;
+    
+    // Spawn points for multiplayer
+    const SPAWN_POINTS = [
+      { x: 200, y: WORLD_HEIGHT - GROUND_HEIGHT - 50 },  // Left side spawn
+      { x: WORLD_WIDTH - 200, y: WORLD_HEIGHT - GROUND_HEIGHT - 50 }  // Right side spawn
+    ];
+    
+    // Handle responsive canvas sizing
     const updateDimensions = () => {
       if (game) {
         const width = window.innerWidth;
         const height = window.innerHeight;
         game.scale.resize(width, height);
-        
-        // Recreate the ground when screen size changes
-        if (platforms && player) {
-          // Remember the player's height above the bottom of the screen
-          const playerBottomPosition = game.scene.scenes[0].cameras.main.height - player.y;
-          
-          // Recreate platforms
-          platforms.clear(true, true);
-          createGround();
-          
-          // Reposition player relative to new ground position
-          player.y = game.scene.scenes[0].cameras.main.height - playerBottomPosition;
-        }
       }
     };
 
-    // Function to create the ground based on current screen dimensions
-    function createGround() {
+    // Function to create the ground based on world dimensions
+    function createGround(scene: Phaser.Scene) {
       if (!platforms) return;
       
-      // Calculate how many ground tiles we need based on the current game width
-      // Adding extra tiles to ensure coverage during transitions
-      const scene = game.scene.scenes[0];
-      const tilesNeeded = Math.ceil(scene.cameras.main.width / 64) + 4;
+      // Calculate how many ground tiles we need based on the world width
+      const tilesNeeded = Math.ceil(WORLD_WIDTH / 64) + 4;
       
-      // Create the ground as a series of tiles at the bottom of the screen
+      // Create the ground as a series of tiles at the bottom of the world
       for (let i = 0; i < tilesNeeded; i++) {
-        // Position ground at the bottom of the screen
         platforms.create(
           i * 64, 
-          scene.cameras.main.height, 
+          WORLD_HEIGHT, 
           'ground'
-        ).setOrigin(0, 1); // Set origin to bottom-left for proper alignment
+        ).setOrigin(0, 1).refreshBody(); // Set origin to bottom-left for proper alignment
       }
+      
+      // Add some platforms throughout the world for more interesting gameplay
+      // Left side platforms
+      platforms.create(300, WORLD_HEIGHT - 200, 'ground').setScale(3, 0.5).refreshBody();
+      platforms.create(600, WORLD_HEIGHT - 350, 'ground').setScale(2, 0.5).refreshBody();
+      
+      // Middle platforms
+      platforms.create(WORLD_WIDTH/2 - 150, WORLD_HEIGHT - 250, 'ground').setScale(4, 0.5).refreshBody();
+      platforms.create(WORLD_WIDTH/2 + 150, WORLD_HEIGHT - 400, 'ground').setScale(3, 0.5).refreshBody();
+      
+      // Right side platforms
+      platforms.create(WORLD_WIDTH - 300, WORLD_HEIGHT - 200, 'ground').setScale(3, 0.5).refreshBody();
+      platforms.create(WORLD_WIDTH - 600, WORLD_HEIGHT - 350, 'ground').setScale(2, 0.5).refreshBody();
     }
 
-    // Function to position the player on the ground
-    function placePlayerOnGround() {
-      if (!player) return;
-      
-      const scene = game.scene.scenes[0];
-      
-      // Position player just above the ground
-      player.y = scene.cameras.main.height - 64;
+    // Function to spawn player at a specific spawn point
+    function spawnPlayer(scene: Phaser.Scene, spawnPointIndex: number = 0) {
+      if (!player) {
+        // Create player sprite at the specified spawn point
+        const spawnPoint = SPAWN_POINTS[spawnPointIndex % SPAWN_POINTS.length];
+        player = scene.physics.add.sprite(spawnPoint.x, spawnPoint.y, 'player');
+        
+        // Set player properties
+        player.setBounce(0.1);
+        player.setCollideWorldBounds(true);
+        
+        // Enable physics collision between player and platforms
+        scene.physics.add.collider(player, platforms);
+        
+        // Make camera follow the player
+        scene.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+        scene.cameras.main.startFollow(player, true, 0.08, 0.08);
+        scene.cameras.main.setZoom(1); // Adjust zoom level as needed
+      } else {
+        // Respawn existing player at the specified spawn point
+        const spawnPoint = SPAWN_POINTS[spawnPointIndex % SPAWN_POINTS.length];
+        player.setPosition(spawnPoint.x, spawnPoint.y);
+        player.setVelocity(0, 0);
+      }
     }
     
     // Function to fire a bullet
@@ -214,6 +237,28 @@ export default function Game() {
         // Generate player texture (32x32 pixels)
         playerGraphics.generateTexture('player', 32, 32);
         
+        // Create a second player character graphic (for multiplayer)
+        const player2Graphics = this.make.graphics({ x: 0, y: 0, add: false });
+        
+        // Draw player body (different color for player 2)
+        player2Graphics.fillStyle(0xff4a4a, 1); // Red color for body
+        player2Graphics.fillRect(8, 0, 16, 32); // Main body
+        
+        // Draw player helmet
+        player2Graphics.fillStyle(0x333333, 1); // Dark gray for helmet
+        player2Graphics.fillRect(6, 0, 20, 10);
+        
+        // Draw player face
+        player2Graphics.fillStyle(0xffcc99, 1); // Skin tone
+        player2Graphics.fillRect(10, 12, 12, 8);
+        
+        // Draw weapon
+        player2Graphics.fillStyle(0x666666, 1); // Gray for gun
+        player2Graphics.fillRect(24, 16, 12, 4);
+        
+        // Generate player2 texture (32x32 pixels)
+        player2Graphics.generateTexture('player2', 32, 32);
+        
         // Create a bullet graphic
         const bulletGraphics = this.make.graphics({ x: 0, y: 0, add: false });
         
@@ -231,28 +276,20 @@ export default function Game() {
 
     // Create game objects
     function create(this: Phaser.Scene) {
+      // Set world bounds for a larger game area
+      this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+      
       // Create the ground platforms static group
       platforms = this.physics.add.staticGroup();
       
       // Create the bullets group
       bullets = this.physics.add.group();
       
-      // Create the ground
-      createGround();
+      // Create the ground and platforms
+      createGround(this);
       
-      // Create player sprite
-      player = this.physics.add.sprite(
-        this.cameras.main.width / 2, 
-        this.cameras.main.height - 100, 
-        'player'
-      );
-      
-      // Set player properties
-      player.setBounce(0.1);
-      player.setCollideWorldBounds(true);
-      
-      // Enable physics collision between player and platforms
-      this.physics.add.collider(player, platforms);
+      // Spawn the player at the first spawn point
+      spawnPlayer(this, 0);
       
       // Enable physics collision between bullets and platforms
       this.physics.add.collider(bullets, platforms, bulletHitPlatform as any, undefined, this);
@@ -292,21 +329,21 @@ export default function Game() {
         right: this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.D)
       };
       
-      // Add game title
-      this.add.text(20, 20, 'Mini Militia Game', { 
+      // Add game title (fixed to camera)
+      const title = this.add.text(20, 20, 'Mini Militia Game', { 
         fontSize: '32px', 
         color: '#fff',
         stroke: '#000',
         strokeThickness: 4
-      });
+      }).setScrollFactor(0);
 
-      // Add fullscreen button
+      // Add fullscreen button (fixed to camera)
       const fullscreenButton = this.add.text(this.cameras.main.width - 20, 20, '[ Fullscreen ]', {
         fontSize: '18px',
         color: '#ffffff',
         stroke: '#000',
         strokeThickness: 2
-      }).setOrigin(1, 0).setInteractive();
+      }).setOrigin(1, 0).setInteractive().setScrollFactor(0);
 
       fullscreenButton.on('pointerup', () => {
         if (this.scale.isFullscreen) {
@@ -332,46 +369,102 @@ export default function Game() {
       // Listen for fullscreen change events from the browser
       this.scale.on('enterfullscreen', () => {
         setIsFullscreen(true);
-        // Ensure ground is properly recreated after fullscreen transition
-        setTimeout(() => {
-          // Recreate ground and reposition player
-          platforms.clear(true, true);
-          createGround();
-          placePlayerOnGround();
-        }, 200);
       });
 
       this.scale.on('leavefullscreen', () => {
         setIsFullscreen(false);
-        // Ensure ground is properly recreated after exiting fullscreen
-        setTimeout(() => {
-          // Recreate ground and reposition player
-          platforms.clear(true, true);
-          createGround();
-          placePlayerOnGround();
-        }, 200);
       });
 
-      // Add instructions
+      // Add respawn buttons for testing multiplayer spawn points
+      const respawnP1Button = this.add.text(20, this.cameras.main.height - 60, 'Respawn P1', {
+        fontSize: '18px',
+        color: '#fff',
+        backgroundColor: '#4a6fff',
+        padding: { x: 10, y: 5 }
+      }).setInteractive().setScrollFactor(0);
+      
+      const respawnP2Button = this.add.text(150, this.cameras.main.height - 60, 'Respawn P2', {
+        fontSize: '18px',
+        color: '#fff',
+        backgroundColor: '#ff4a4a',
+        padding: { x: 10, y: 5 }
+      }).setInteractive().setScrollFactor(0);
+      
+      respawnP1Button.on('pointerup', () => {
+        spawnPlayer(this, 0);
+      });
+      
+      respawnP2Button.on('pointerup', () => {
+        spawnPlayer(this, 1);
+      });
+
+      // Add instructions (fixed to camera)
       this.add.text(20, 70, 'Use Arrow Keys or A/D to move', {
         fontSize: '18px',
         color: '#fff',
         stroke: '#000',
         strokeThickness: 2
-      });
+      }).setScrollFactor(0);
       
       this.add.text(20, 100, 'Use Up/W to jump', {
         fontSize: '18px',
         color: '#fff',
         stroke: '#000',
         strokeThickness: 2
-      });
+      }).setScrollFactor(0);
       
       this.add.text(20, 130, 'Press SPACE to fire bullets', {
         fontSize: '18px',
         color: '#fff',
         stroke: '#000',
         strokeThickness: 2
+      }).setScrollFactor(0);
+      
+      // Add world size indicator
+      this.add.text(20, 160, `World Size: ${WORLD_WIDTH}x${WORLD_HEIGHT}`, {
+        fontSize: '18px',
+        color: '#fff',
+        stroke: '#000',
+        strokeThickness: 2
+      }).setScrollFactor(0);
+      
+      // Add minimap (optional)
+      const minimapWidth = 200;
+      const minimapHeight = 100;
+      const minimapX = this.cameras.main.width - minimapWidth - 20;
+      const minimapY = this.cameras.main.height - minimapHeight - 20;
+      
+      // Create minimap camera
+      const minimapCamera = this.cameras.add(minimapX, minimapY, minimapWidth, minimapHeight)
+        .setZoom(minimapWidth / WORLD_WIDTH)
+        .setName('minimap')
+        .setBackgroundColor(0x002244)
+        .setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+      
+      // The camera itself doesn't need setScrollFactor as it's positioned absolutely
+      // We can add a player marker to the minimap instead
+      const minimapPlayerMarker = this.add.circle(0, 0, 4, 0xffffff)
+        .setDepth(1000) // Make sure it's above other elements
+        .setName('minimapPlayerMarker');
+      
+      // Add border around minimap
+      const minimapBorder = this.add.rectangle(
+        minimapX + minimapWidth / 2, 
+        minimapY + minimapHeight / 2, 
+        minimapWidth, 
+        minimapHeight, 
+        0x000000, 
+        0
+      ).setStrokeStyle(2, 0xffffff).setScrollFactor(0);
+      
+      // Add spawn point indicators on minimap
+      SPAWN_POINTS.forEach((point, index) => {
+        const color = index === 0 ? 0x4a6fff : 0xff4a4a;
+        const spawnMarker = this.add.circle(
+          minimapX + (point.x / WORLD_WIDTH) * minimapWidth,
+          minimapY + (point.y / WORLD_HEIGHT) * minimapHeight,
+          3, color
+        ).setAlpha(0.8);
       });
     }
 
@@ -409,7 +502,8 @@ export default function Game() {
       
       // Clean up bullets that are out of bounds
       bullets.getChildren().forEach((bullet: any) => {
-        if (bullet.x < -50 || bullet.x > this.cameras.main.width + 50) {
+        if (bullet.x < -50 || bullet.x > WORLD_WIDTH + 50 || 
+            bullet.y < -50 || bullet.y > WORLD_HEIGHT + 50) {
           // Clean up particle effects
           const emitter = bullet.getData('emitter');
           if (emitter) {
@@ -418,6 +512,26 @@ export default function Game() {
           bullet.destroy();
         }
       });
+      
+      // Update minimap player marker position
+      const minimapPlayerMarker = this.children.getByName('minimapPlayerMarker');
+      if (minimapPlayerMarker) {
+        const minimapWidth = 200;
+        const minimapHeight = 100;
+        const minimapX = this.cameras.main.width - minimapWidth - 20;
+        const minimapY = this.cameras.main.height - minimapHeight - 20;
+        
+        minimapPlayerMarker.setPosition(
+          minimapX + (player.x / WORLD_WIDTH) * minimapWidth,
+          minimapY + (player.y / WORLD_HEIGHT) * minimapHeight
+        );
+      }
+      
+      // Update UI elements that need to follow the camera
+      const fullscreenButton = this.children.getByName('fullscreenButton');
+      if (fullscreenButton) {
+        fullscreenButton.setPosition(this.cameras.main.width - 20, 20);
+      }
     }
 
     // Add window resize listener
