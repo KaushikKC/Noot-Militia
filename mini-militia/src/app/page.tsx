@@ -75,7 +75,7 @@ export default function Home() {
             onClick={() => setShowGame(false)}
             className="flex items-center gap-2 hover:underline hover:underline-offset-4"
           >
-            ← Back to Home
+            {/* ← Back to Home */}
           </button>
         )}
         {!showGame && (
