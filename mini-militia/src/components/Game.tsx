@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
+import io from 'socket.io-client';
 
 export default function Game() {
   const gameRef = useRef<HTMLDivElement>(null);
@@ -18,6 +19,13 @@ export default function Game() {
     let spaceKey: Phaser.Input.Keyboard.Key;
     let game: Phaser.Game;
     let lastFired = 0; // Timestamp of last bullet fired
+    
+    // Multiplayer variables
+    let socket: any;
+    let otherPlayers: Map<string, Phaser.Physics.Arcade.Sprite>;
+    let prevX: number;
+    let prevY: number;
+    let prevFlipX: boolean;
     
     // Game world configuration
     const WORLD_WIDTH = 3200; // Much wider world
@@ -69,31 +77,164 @@ export default function Game() {
       platforms.create(WORLD_WIDTH - 600, WORLD_HEIGHT - 350, 'ground').setScale(2, 0.5).refreshBody();
     }
 
-    // Function to spawn player at a specific spawn point
-    function spawnPlayer(scene: Phaser.Scene, spawnPointIndex: number = 0) {
-      if (!player) {
-        // Create player sprite at the specified spawn point
-        const spawnPoint = SPAWN_POINTS[spawnPointIndex % SPAWN_POINTS.length];
-        player = scene.physics.add.sprite(spawnPoint.x, spawnPoint.y, 'player');
-        
-        // Set player properties
-        player.setBounce(0.1);
-        player.setCollideWorldBounds(true);
-        
-        // Enable physics collision between player and platforms
+// Function to spawn player at a specific spawn point
+function spawnPlayer(scene: Phaser.Scene, spawnPointIndex: number = 0) {
+  // Check if the scene is still active
+  if (!scene.scene.isActive()) return;
+  
+  if (!player) {
+    try {
+      // Create player sprite at the specified spawn point
+      const spawnPoint = SPAWN_POINTS[spawnPointIndex % SPAWN_POINTS.length];
+      player = scene.physics.add.sprite(spawnPoint.x, spawnPoint.y, 'player');
+      
+      // Set player properties
+      player.setBounce(0.1);
+      player.setCollideWorldBounds(true);
+      
+      // Enable physics collision between player and platforms
+      if (platforms) {
         scene.physics.add.collider(player, platforms);
-        
-        // Make camera follow the player
-        scene.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-        scene.cameras.main.startFollow(player, true, 0.08, 0.08);
-        scene.cameras.main.setZoom(1); // Adjust zoom level as needed
-      } else {
-        // Respawn existing player at the specified spawn point
-        const spawnPoint = SPAWN_POINTS[spawnPointIndex % SPAWN_POINTS.length];
-        player.setPosition(spawnPoint.x, spawnPoint.y);
-        player.setVelocity(0, 0);
       }
+      
+      // Make camera follow the player
+      scene.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+      scene.cameras.main.startFollow(player, true, 0.08, 0.08);
+      scene.cameras.main.setZoom(1); // Adjust zoom level as needed
+      
+      // Store initial position for movement detection
+      prevX = player.x;
+      prevY = player.y;
+      prevFlipX = player.flipX;
+      
+      // Initialize socket connection if not already done
+      // We do this after player is created to ensure everything is ready
+      if (!socket) {
+        // Use a small delay to ensure everything is initialized
+        scene.time.delayedCall(500, () => {
+          initializeMultiplayer(scene);
+        });
+      }
+    } catch (error) {
+      console.error('Error spawning player:', error);
     }
+  } else {
+    // Respawn existing player at the specified spawn point
+    const spawnPoint = SPAWN_POINTS[spawnPointIndex % SPAWN_POINTS.length];
+    player.setPosition(spawnPoint.x, spawnPoint.y);
+    player.setVelocity(0, 0);
+  }
+}
+    
+// Function to initialize multiplayer
+function initializeMultiplayer(scene: Phaser.Scene) {
+  // Initialize map for other players
+  otherPlayers = new Map();
+  
+  // Connect to the server
+  socket = io('http://localhost:4000'); // Replace with your server URL
+  
+  // Handle current players data
+  socket.on('currentPlayers', (players: any) => {
+    // Only process if the scene is still active
+    if (!scene.scene.isActive()) return;
+    
+    Object.keys(players).forEach((id) => {
+      if (id !== socket.id) {
+        // Add other existing players
+        addOtherPlayer(scene, players[id]);
+      }
+    });
+  });
+  
+  // Handle new player joining
+  socket.on('newPlayer', (playerInfo: any) => {
+    // Only process if the scene is still active
+    if (!scene.scene.isActive()) return;
+    
+    addOtherPlayer(scene, playerInfo);
+  });
+  
+  // Handle player movement updates
+  socket.on('playerMoved', (playerInfo: any) => {
+    // Only process if the scene is still active
+    if (!scene.scene.isActive()) return;
+    
+    const otherPlayer = otherPlayers.get(playerInfo.playerId);
+    if (otherPlayer) {
+      otherPlayer.setPosition(playerInfo.x, playerInfo.y);
+      otherPlayer.setFlipX(playerInfo.flipX);
+    }
+  });
+  
+  // Handle player disconnection
+  socket.on('playerDisconnected', (playerId: string) => {
+    // Only process if the scene is still active
+    if (!scene.scene.isActive()) return;
+    
+    const otherPlayer = otherPlayers.get(playerId);
+    if (otherPlayer) {
+      otherPlayer.destroy();
+      otherPlayers.delete(playerId);
+    }
+  });
+  
+  // Handle bullets fired by other players
+  socket.on('bulletCreated', (bulletData: any) => {
+    // Only process if the scene is still active and bullets group exists
+    if (!scene.scene.isActive() || !bullets) return;
+    
+    try {
+      const bullet = bullets.create(bulletData.x, bulletData.y, 'bullet');
+      bullet.setCollideWorldBounds(false);
+      bullet.body.allowGravity = false;
+      bullet.setVelocityX(bulletData.velocityX);
+      
+      // Add a trail effect
+      const emitter = scene.add.particles(bulletData.x, bulletData.y, 'bullet', {
+        speed: 20,
+        scale: { start: 0.2, end: 0 },
+        alpha: { start: 0.5, end: 0 },
+        lifespan: 100,
+        blendMode: 'ADD',
+        follow: bullet
+      });
+      
+      bullet.setData('emitter', emitter);
+    } catch (error) {
+      console.error('Error creating bullet:', error);
+    }
+  });
+}
+    
+// Function to add other players
+function addOtherPlayer(scene: Phaser.Scene, playerInfo: any) {
+  // Check if the scene and physics system are still active
+  if (!scene.scene.isActive() || !scene.physics || !platforms) {
+    console.warn('Cannot add other player - scene or physics not ready');
+    return;
+  }
+  
+  try {
+    const otherPlayer = scene.physics.add.sprite(
+      playerInfo.x,
+      playerInfo.y,
+      'player2' // Use the red player sprite for other players
+    );
+    
+    otherPlayer.setBounce(0.1);
+    otherPlayer.setCollideWorldBounds(true);
+    otherPlayer.setData('playerId', playerInfo.playerId);
+    
+    // Add collision with platforms
+    scene.physics.add.collider(otherPlayer, platforms);
+    
+    // Store in our map
+    otherPlayers.set(playerInfo.playerId, otherPlayer);
+  } catch (error) {
+    console.error('Error adding other player:', error);
+  }
+}
     
     // Function to fire a bullet
     function fireBullet(scene: Phaser.Scene) {
@@ -138,6 +279,15 @@ export default function Game() {
         duration: 80,
         onComplete: () => flash.destroy()
       });
+      
+      // Emit to server that we fired a bullet
+      if (socket) {
+        socket.emit('playerShoot', {
+          x: bulletX,
+          y: player.y - 5,
+          velocityX: player.flipX ? -400 : 400
+        });
+      }
     }
     
     // Function to handle bullet-platform collision
@@ -274,199 +424,213 @@ export default function Game() {
       });
     }
 
-    // Create game objects
-    function create(this: Phaser.Scene) {
-      // Set world bounds for a larger game area
-      this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-      
-      // Create the ground platforms static group
-      platforms = this.physics.add.staticGroup();
-      
-      // Create the bullets group
-      bullets = this.physics.add.group();
-      
-      // Create the ground and platforms
-      createGround(this);
-      
-      // Spawn the player at the first spawn point
-      spawnPlayer(this, 0);
-      
-      // Enable physics collision between bullets and platforms
-      this.physics.add.collider(bullets, platforms, bulletHitPlatform as any, undefined, this);
-      
-      // Create animations for player movement
-      this.anims.create({
-        key: 'left',
-        frames: [{ key: 'player', frame: 0 }],
-        frameRate: 10,
-        repeat: -1
-      });
-      
-      this.anims.create({
-        key: 'turn',
-        frames: [{ key: 'player', frame: 0 }],
-        frameRate: 20
-      });
-      
-      this.anims.create({
-        key: 'right',
-        frames: [{ key: 'player', frame: 0 }],
-        frameRate: 10,
-        repeat: -1
-      });
-      
-      // Set up keyboard input
-      cursors = this.input.keyboard?.createCursorKeys() as Phaser.Types.Input.Keyboard.CursorKeys;
-      
-      // Set up space key for shooting (separate from cursor keys)
-      spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-      
-      // Add WASD keys for alternative movement
-      const wasd = {
-        up: this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.W),
-        left: this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.A),
-        down: this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.S),
-        right: this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.D)
-      };
-      
-      // Add game title (fixed to camera)
-      const title = this.add.text(20, 20, 'Mini Militia Game', { 
-        fontSize: '32px', 
-        color: '#fff',
-        stroke: '#000',
-        strokeThickness: 4
-      }).setScrollFactor(0);
+// Create game objects
+function create(this: Phaser.Scene) {
+  try {
+    // Set world bounds for a larger game area
+    this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    
+    // Create the ground platforms static group
+    platforms = this.physics.add.staticGroup();
+    
+    // Create the bullets group
+    bullets = this.physics.add.group();
+    
+    // Create the ground and platforms
+    createGround(this);
+    
+    // Create animations for player movement
+    this.anims.create({
+      key: 'left',
+      frames: [{ key: 'player', frame: 0 }],
+      frameRate: 10,
+      repeat: -1
+    });
+    
+    this.anims.create({
+      key: 'turn',
+      frames: [{ key: 'player', frame: 0 }],
+      frameRate: 20
+    });
+    
+    this.anims.create({
+      key: 'right',
+      frames: [{ key: 'player', frame: 0 }],
+      frameRate: 10,
+      repeat: -1
+    });
+    
+    // Set up keyboard input
+    cursors = this.input.keyboard?.createCursorKeys() as Phaser.Types.Input.Keyboard.CursorKeys;
+    
+    // Set up space key for shooting (separate from cursor keys)
+    spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    
+    // Add WASD keys for alternative movement
+    const wasd = {
+      up: this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+      left: this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+      down: this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.S),
+      right: this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.D)
+    };
+    
+    // Add game title (fixed to camera)
+    const title = this.add.text(20, 20, 'Mini Militia Game', { 
+      fontSize: '32px', 
+      color: '#fff',
+      stroke: '#000',
+      strokeThickness: 4
+    }).setScrollFactor(0);
 
-      // Add fullscreen button (fixed to camera)
-      const fullscreenButton = this.add.text(this.cameras.main.width - 20, 20, '[ Fullscreen ]', {
-        fontSize: '18px',
-        color: '#ffffff',
-        stroke: '#000',
-        strokeThickness: 2
-      }).setOrigin(1, 0).setInteractive().setScrollFactor(0);
+    // Add fullscreen button (fixed to camera)
+    const fullscreenButton = this.add.text(this.cameras.main.width - 20, 20, '[ Fullscreen ]', {
+      fontSize: '18px',
+      color: '#ffffff',
+      stroke: '#000',
+      strokeThickness: 2
+    }).setOrigin(1, 0).setInteractive().setScrollFactor(0).setName('fullscreenButton');
 
-      fullscreenButton.on('pointerup', () => {
-        if (this.scale.isFullscreen) {
-          this.scale.stopFullscreen();
-          setIsFullscreen(false);
-        } else {
-          this.scale.startFullscreen();
-          setIsFullscreen(true);
-        }
-      });
-
-      // Listen for F key to toggle fullscreen
-      this.input.keyboard?.on('keydown-F', () => {
-        if (this.scale.isFullscreen) {
-          this.scale.stopFullscreen();
-          setIsFullscreen(false);
-        } else {
-          this.scale.startFullscreen();
-          setIsFullscreen(true);
-        }
-      });
-
-      // Listen for fullscreen change events from the browser
-      this.scale.on('enterfullscreen', () => {
-        setIsFullscreen(true);
-      });
-
-      this.scale.on('leavefullscreen', () => {
+    fullscreenButton.on('pointerup', () => {
+      if (this.scale.isFullscreen) {
+        this.scale.stopFullscreen();
         setIsFullscreen(false);
-      });
+      } else {
+        this.scale.startFullscreen();
+        setIsFullscreen(true);
+      }
+    });
 
-      // Add respawn buttons for testing multiplayer spawn points
-      const respawnP1Button = this.add.text(20, this.cameras.main.height - 60, 'Respawn P1', {
-        fontSize: '18px',
-        color: '#fff',
-        backgroundColor: '#4a6fff',
-        padding: { x: 10, y: 5 }
-      }).setInteractive().setScrollFactor(0);
-      
-      const respawnP2Button = this.add.text(150, this.cameras.main.height - 60, 'Respawn P2', {
-        fontSize: '18px',
-        color: '#fff',
-        backgroundColor: '#ff4a4a',
-        padding: { x: 10, y: 5 }
-      }).setInteractive().setScrollFactor(0);
-      
-      respawnP1Button.on('pointerup', () => {
-        spawnPlayer(this, 0);
-      });
-      
-      respawnP2Button.on('pointerup', () => {
-        spawnPlayer(this, 1);
-      });
+    // Listen for F key to toggle fullscreen
+    this.input.keyboard?.on('keydown-F', () => {
+      if (this.scale.isFullscreen) {
+        this.scale.stopFullscreen();
+        setIsFullscreen(false);
+      } else {
+        this.scale.startFullscreen();
+        setIsFullscreen(true);
+      }
+    });
 
-      // Add instructions (fixed to camera)
-      this.add.text(20, 70, 'Use Arrow Keys or A/D to move', {
-        fontSize: '18px',
-        color: '#fff',
-        stroke: '#000',
-        strokeThickness: 2
-      }).setScrollFactor(0);
-      
-      this.add.text(20, 100, 'Use Up/W to jump', {
-        fontSize: '18px',
-        color: '#fff',
-        stroke: '#000',
-        strokeThickness: 2
-      }).setScrollFactor(0);
-      
-      this.add.text(20, 130, 'Press SPACE to fire bullets', {
-        fontSize: '18px',
-        color: '#fff',
-        stroke: '#000',
-        strokeThickness: 2
-      }).setScrollFactor(0);
-      
-      // Add world size indicator
-      this.add.text(20, 160, `World Size: ${WORLD_WIDTH}x${WORLD_HEIGHT}`, {
-        fontSize: '18px',
-        color: '#fff',
-        stroke: '#000',
-        strokeThickness: 2
-      }).setScrollFactor(0);
-      
-      // Add minimap (optional)
-      const minimapWidth = 200;
-      const minimapHeight = 100;
-      const minimapX = this.cameras.main.width - minimapWidth - 20;
-      const minimapY = this.cameras.main.height - minimapHeight - 20;
-      
-      // Create minimap camera
-      const minimapCamera = this.cameras.add(minimapX, minimapY, minimapWidth, minimapHeight)
-        .setZoom(minimapWidth / WORLD_WIDTH)
-        .setName('minimap')
-        .setBackgroundColor(0x002244)
-        .setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-      
-      // The camera itself doesn't need setScrollFactor as it's positioned absolutely
-      // We can add a player marker to the minimap instead
-      const minimapPlayerMarker = this.add.circle(0, 0, 4, 0xffffff)
-        .setDepth(1000) // Make sure it's above other elements
-        .setName('minimapPlayerMarker');
-      
-      // Add border around minimap
-      const minimapBorder = this.add.rectangle(
-        minimapX + minimapWidth / 2, 
-        minimapY + minimapHeight / 2, 
-        minimapWidth, 
-        minimapHeight, 
-        0x000000, 
-        0
-      ).setStrokeStyle(2, 0xffffff).setScrollFactor(0);
-      
-      // Add spawn point indicators on minimap
-      SPAWN_POINTS.forEach((point, index) => {
-        const color = index === 0 ? 0x4a6fff : 0xff4a4a;
-        const spawnMarker = this.add.circle(
-          minimapX + (point.x / WORLD_WIDTH) * minimapWidth,
-          minimapY + (point.y / WORLD_HEIGHT) * minimapHeight,
-          3, color
-        ).setAlpha(0.8);
-      });
-    }
+    // Listen for fullscreen change events from the browser
+    this.scale.on('enterfullscreen', () => {
+      setIsFullscreen(true);
+    });
+
+    this.scale.on('leavefullscreen', () => {
+      setIsFullscreen(false);
+    });
+
+    // Add respawn buttons for testing multiplayer spawn points
+    const respawnP1Button = this.add.text(20, this.cameras.main.height - 60, 'Respawn P1', {
+      fontSize: '18px',
+      color: '#fff',
+      backgroundColor: '#4a6fff',
+      padding: { x: 10, y: 5 }
+    }).setInteractive().setScrollFactor(0);
+    
+    const respawnP2Button = this.add.text(150, this.cameras.main.height - 60, 'Respawn P2', {
+      fontSize: '18px',
+      color: '#fff',
+      backgroundColor: '#ff4a4a',
+      padding: { x: 10, y: 5 }
+    }).setInteractive().setScrollFactor(0);
+    
+    respawnP1Button.on('pointerup', () => {
+      spawnPlayer(this, 0);
+    });
+    
+    respawnP2Button.on('pointerup', () => {
+      spawnPlayer(this, 1);
+    });
+
+    // Add instructions (fixed to camera)
+    this.add.text(20, 70, 'Use Arrow Keys or A/D to move', {
+      fontSize: '18px',
+      color: '#fff',
+      stroke: '#000',
+      strokeThickness: 2
+    }).setScrollFactor(0);
+    
+    this.add.text(20, 100, 'Use Up/W to jump', {
+      fontSize: '18px',
+      color: '#fff',
+      stroke: '#000',
+      strokeThickness: 2
+    }).setScrollFactor(0);
+    
+    this.add.text(20, 130, 'Press SPACE to fire bullets', {
+      fontSize: '18px',
+      color: '#fff',
+      stroke: '#000',
+      strokeThickness: 2
+    }).setScrollFactor(0);
+    
+    // Add world size indicator
+    this.add.text(20, 160, `World Size: ${WORLD_WIDTH}x${WORLD_HEIGHT}`, {
+      fontSize: '18px',
+      color: '#fff',
+      stroke: '#000',
+      strokeThickness: 2
+    }).setScrollFactor(0);
+    
+    // Add multiplayer status indicator
+    const multiplayerStatus = this.add.text(20, 190, 'Multiplayer: Connecting...', {
+      fontSize: '18px',
+      color: '#fff',
+      stroke: '#000',
+      strokeThickness: 2
+    }).setScrollFactor(0).setName('multiplayerStatus');
+    
+    // Add minimap (optional)
+    const minimapWidth = 200;
+    const minimapHeight = 100;
+    const minimapX = this.cameras.main.width - minimapWidth - 20;
+    const minimapY = this.cameras.main.height - minimapHeight - 20;
+    
+    // Create minimap camera
+    const minimapCamera = this.cameras.add(minimapX, minimapY, minimapWidth, minimapHeight)
+      .setZoom(minimapWidth / WORLD_WIDTH)
+      .setName('minimap')
+      .setBackgroundColor(0x002244)
+      .setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    
+    // The camera itself doesn't need setScrollFactor as it's positioned absolutely
+    // We can add a player marker to the minimap instead
+    const minimapPlayerMarker = this.add.circle(0, 0, 4, 0xffffff)
+      .setDepth(1000) // Make sure it's above other elements
+      .setName('minimapPlayerMarker');
+    
+    // Add border around minimap
+    const minimapBorder = this.add.rectangle(
+      minimapX + minimapWidth / 2, 
+      minimapY + minimapHeight / 2, 
+      minimapWidth, 
+      minimapHeight, 
+      0x000000, 
+      0
+    ).setStrokeStyle(2, 0xffffff).setScrollFactor(0);
+    
+    // Add spawn point indicators on minimap
+    SPAWN_POINTS.forEach((point, index) => {
+      const color = index === 0 ? 0x4a6fff : 0xff4a4a;
+      const spawnMarker = this.add.circle(
+        minimapX + (point.x / WORLD_WIDTH) * minimapWidth,
+        minimapY + (point.y / WORLD_HEIGHT) * minimapHeight,
+        3, color
+      ).setAlpha(0.8);
+    });
+    
+    // Enable physics collision between bullets and platforms
+    this.physics.add.collider(bullets, platforms, bulletHitPlatform as any, undefined, this);
+    
+    // Spawn the player at the first spawn point - do this last to ensure everything else is ready
+    this.time.delayedCall(100, () => {
+      spawnPlayer(this, 0);
+    });
+  } catch (error) {
+    console.error('Error in create function:', error);
+  }
+}
 
     // Update game state (runs on every frame)
     function update(this: Phaser.Scene) {
@@ -532,6 +696,50 @@ export default function Game() {
       if (fullscreenButton) {
         fullscreenButton.setPosition(this.cameras.main.width - 20, 20);
       }
+      
+      // Send position updates to server if player has moved
+      if (player && socket) {
+        const x = player.x;
+        const y = player.y;
+        const flipX = player.flipX;
+        
+        if (prevX !== x || prevY !== y || prevFlipX !== flipX) {
+          socket.emit('playerMovement', {
+            x: x,
+            y: y,
+            flipX: flipX
+          });
+          
+          // Update previous position
+          prevX = x;
+          prevY = y;
+          prevFlipX = flipX;
+        }
+      }
+      
+      // Update other players on minimap
+      if (otherPlayers) {
+        otherPlayers.forEach((otherPlayer, playerId) => {
+          const minimapWidth = 200;
+          const minimapHeight = 100;
+          const minimapX = this.cameras.main.width - minimapWidth - 20;
+          const minimapY = this.cameras.main.height - minimapHeight - 20;
+          
+          // Get or create minimap marker for this player
+          let marker = this.children.getByName(`minimap-player-${playerId}`);
+          if (!marker) {
+            marker = this.add.circle(0, 0, 4, 0xff4a4a)
+              .setDepth(1000)
+              .setName(`minimap-player-${playerId}`);
+          }
+          
+          // Update marker position
+          marker.setPosition(
+            minimapX + (otherPlayer.x / WORLD_WIDTH) * minimapWidth,
+            minimapY + (otherPlayer.y / WORLD_HEIGHT) * minimapHeight
+          );
+        });
+      }
     }
 
     // Add window resize listener
@@ -540,6 +748,9 @@ export default function Game() {
     // Cleanup function
     return () => {
       window.removeEventListener('resize', updateDimensions);
+      if (socket) {
+        socket.disconnect();
+      }
       game.destroy(true);
     };
   }, []);
