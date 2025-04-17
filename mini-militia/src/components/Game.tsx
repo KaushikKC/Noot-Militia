@@ -14,8 +14,11 @@ export default function Game() {
     // Variables to store game objects
     let platforms: Phaser.Physics.Arcade.StaticGroup;
     let player: Phaser.Physics.Arcade.Sprite;
+    let bullets: Phaser.Physics.Arcade.Group;
     let cursors: Phaser.Types.Input.Keyboard.CursorKeys;
+    let spaceKey: Phaser.Input.Keyboard.Key;
     let game: Phaser.Game;
+    let lastFired = 0; // Timestamp of last bullet fired
     
     // Handle responsive canvas sizing and update ground
     const updateDimensions = () => {
@@ -67,6 +70,74 @@ export default function Game() {
       
       // Position player just above the ground
       player.y = scene.cameras.main.height - 64;
+    }
+    
+    // Function to fire a bullet
+    function fireBullet(scene: Phaser.Scene) {
+      const time = scene.time.now;
+      
+      // Cooldown of 200ms between shots
+      if (time - lastFired < 200) {
+        return;
+      }
+      
+      // Create a bullet at the player's position
+      const bulletX = player.flipX ? player.x - 20 : player.x + 20;
+      const bullet = bullets.create(bulletX, player.y - 5, 'bullet');
+      
+      // Set bullet properties
+      bullet.setCollideWorldBounds(false);
+      bullet.body.allowGravity = false;
+      bullet.setVelocityX(player.flipX ? -400 : 400); // Direction based on player facing
+      
+      // Add a trail effect using the updated Phaser API
+      const emitter = scene.add.particles(bulletX, player.y - 5, 'bullet', {
+        speed: 20,
+        scale: { start: 0.2, end: 0 },
+        alpha: { start: 0.5, end: 0 },
+        lifespan: 100,
+        blendMode: 'ADD',
+        follow: bullet
+      });
+      
+      // Store emitter reference with the bullet for cleanup
+      bullet.setData('emitter', emitter);
+      
+      // Update last fired timestamp
+      lastFired = time;
+      
+      // Add a simple muzzle flash effect
+      const flash = scene.add.circle(bulletX, player.y - 5, 6, 0xffff00, 0.8);
+      scene.tweens.add({
+        targets: flash,
+        scale: 0,
+        alpha: 0,
+        duration: 80,
+        onComplete: () => flash.destroy()
+      });
+    }
+    
+    // Function to handle bullet-platform collision
+    function bulletHitPlatform(bullet: Phaser.Physics.Arcade.Sprite, platform: Phaser.Physics.Arcade.Sprite) {
+      // Create impact effect
+      const scene = game.scene.scenes[0];
+      const impact = scene.add.circle(bullet.x, bullet.y, 5, 0xffff00, 0.8);
+      scene.tweens.add({
+        targets: impact,
+        scale: 2,
+        alpha: 0,
+        duration: 200,
+        onComplete: () => impact.destroy()
+      });
+      
+      // Destroy the particle emitter if it exists
+      const emitter = bullet.getData('emitter');
+      if (emitter) {
+        emitter.destroy();
+      }
+      
+      // Destroy the bullet
+      bullet.destroy();
     }
 
     // Configuration for our Phaser game
@@ -142,6 +213,19 @@ export default function Game() {
         
         // Generate player texture (32x32 pixels)
         playerGraphics.generateTexture('player', 32, 32);
+        
+        // Create a bullet graphic
+        const bulletGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+        
+        // Draw bullet
+        bulletGraphics.fillStyle(0xffff00, 1); // Yellow core
+        bulletGraphics.fillCircle(4, 4, 4);
+        
+        bulletGraphics.fillStyle(0xff6600, 1); // Orange trail
+        bulletGraphics.fillCircle(2, 2, 2);
+        
+        // Generate bullet texture (8x8 pixels)
+        bulletGraphics.generateTexture('bullet', 8, 8);
       });
     }
 
@@ -149,6 +233,9 @@ export default function Game() {
     function create(this: Phaser.Scene) {
       // Create the ground platforms static group
       platforms = this.physics.add.staticGroup();
+      
+      // Create the bullets group
+      bullets = this.physics.add.group();
       
       // Create the ground
       createGround();
@@ -166,6 +253,9 @@ export default function Game() {
       
       // Enable physics collision between player and platforms
       this.physics.add.collider(player, platforms);
+      
+      // Enable physics collision between bullets and platforms
+      this.physics.add.collider(bullets, platforms, bulletHitPlatform as any, undefined, this);
       
       // Create animations for player movement
       this.anims.create({
@@ -190,6 +280,9 @@ export default function Game() {
       
       // Set up keyboard input
       cursors = this.input.keyboard?.createCursorKeys() as Phaser.Types.Input.Keyboard.CursorKeys;
+      
+      // Set up space key for shooting (separate from cursor keys)
+      spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
       
       // Add WASD keys for alternative movement
       const wasd = {
@@ -266,6 +359,20 @@ export default function Game() {
         stroke: '#000',
         strokeThickness: 2
       });
+      
+      this.add.text(20, 100, 'Use Up/W to jump', {
+        fontSize: '18px',
+        color: '#fff',
+        stroke: '#000',
+        strokeThickness: 2
+      });
+      
+      this.add.text(20, 130, 'Press SPACE to fire bullets', {
+        fontSize: '18px',
+        color: '#fff',
+        stroke: '#000',
+        strokeThickness: 2
+      });
     }
 
     // Update game state (runs on every frame)
@@ -289,13 +396,28 @@ export default function Game() {
         player.anims.play('turn');
       }
       
-      // Allow jumping if touching the ground
-      if ((cursors.up.isDown || 
-          this.input.keyboard?.checkDown(this.input.keyboard.addKey('W')) || 
-          this.input.keyboard?.checkDown(this.input.keyboard.addKey('SPACE'))) && 
+      // Allow jumping if touching the ground, but NOT with spacebar
+      if ((cursors.up.isDown || this.input.keyboard?.checkDown(this.input.keyboard.addKey('W'))) && 
           player.body.touching.down) {
         player.setVelocityY(-330);
       }
+      
+      // Fire bullet with spacebar
+      if (spaceKey.isDown) {
+        fireBullet(this);
+      }
+      
+      // Clean up bullets that are out of bounds
+      bullets.getChildren().forEach((bullet: any) => {
+        if (bullet.x < -50 || bullet.x > this.cameras.main.width + 50) {
+          // Clean up particle effects
+          const emitter = bullet.getData('emitter');
+          if (emitter) {
+            emitter.destroy();
+          }
+          bullet.destroy();
+        }
+      });
     }
 
     // Add window resize listener
