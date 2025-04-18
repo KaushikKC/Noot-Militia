@@ -32,6 +32,7 @@ export default function Game() {
     let lastFired = 0; // Timestamp of last bullet fired
     // Add this with your other variables
     let bulletOwners = new Map(); // Map to track bullet owners separately from Phaser's data system
+    let rocks: Phaser.Physics.Arcade.StaticGroup;
 
     // Multiplayer variables
     let socket: any;
@@ -84,35 +85,126 @@ export default function Game() {
       }
 
       // Add some platforms throughout the world for more interesting gameplay
-      // Left side platforms
+      // Left side platforms - reduced height by 30
       platforms
-        .create(300, WORLD_HEIGHT - 200, "ground")
+        .create(300, WORLD_HEIGHT - 120, "ground") // Was 120, now 90
         .setScale(3, 0.5)
         .refreshBody();
       platforms
-        .create(600, WORLD_HEIGHT - 350, "ground")
+        .create(500, WORLD_HEIGHT - 200, "ground") // Was 280, now 250
         .setScale(2, 0.5)
         .refreshBody();
 
-      // Middle platforms
+      // Middle platforms - reduced height by 30
       platforms
-        .create(WORLD_WIDTH / 2 - 150, WORLD_HEIGHT - 250, "ground")
+        .create(WORLD_WIDTH / 2 - 150, WORLD_HEIGHT - 120, "ground") // Was 150, now 120
         .setScale(4, 0.5)
         .refreshBody();
       platforms
-        .create(WORLD_WIDTH / 2 + 150, WORLD_HEIGHT - 400, "ground")
+        .create(WORLD_WIDTH / 2 + 80, WORLD_HEIGHT - 200, "ground") // Was 300, now 270
         .setScale(3, 0.5)
         .refreshBody();
 
-      // Right side platforms
+      // Right side platforms - reduced height by 30
       platforms
-        .create(WORLD_WIDTH - 300, WORLD_HEIGHT - 200, "ground")
+        .create(WORLD_WIDTH - 300, WORLD_HEIGHT - 120, "ground") // Was 150, now 120
         .setScale(3, 0.5)
         .refreshBody();
       platforms
-        .create(WORLD_WIDTH - 600, WORLD_HEIGHT - 350, "ground")
+        .create(WORLD_WIDTH - 500, WORLD_HEIGHT - 200, "ground") // Was 280, now 250
         .setScale(2, 0.5)
         .refreshBody();
+
+      // Add rocks on platforms for cover
+      createRocks(scene);
+    }
+
+    function createRocks(scene: Phaser.Scene) {
+      // Create the rocks group (needs to be defined at the top with other game objects)
+      if (!rocks) {
+        rocks = scene.physics.add.staticGroup();
+      }
+
+      // Add rocks on left platforms
+      createRock(scene, 250, WORLD_HEIGHT - 150, 1.2); // Was 150, now 120
+      createRock(scene, 350, WORLD_HEIGHT - 150, 1); // Was 150, now 120
+      createRock(scene, 500, WORLD_HEIGHT - 230, 1.3); // Was 310, now 280
+
+      // Add rocks on middle platforms - adjusted for new platform heights
+      createRock(scene, WORLD_WIDTH / 2 - 200, WORLD_HEIGHT - 150, 1.4); // Was 180, now 150
+      createRock(scene, WORLD_WIDTH / 2 - 50, WORLD_HEIGHT - 150, 1); // Was 180, now 150
+      createRock(scene, WORLD_WIDTH / 2 + 30, WORLD_HEIGHT - 230, 1.2); // Was 330, now 300
+      createRock(scene, WORLD_WIDTH / 2 + 100, WORLD_HEIGHT - 230, 1); // Was 330, now 300
+
+      // Add rocks on right platforms - adjusted for new platform heights
+      createRock(scene, WORLD_WIDTH - 350, WORLD_HEIGHT - 150, 1.1); // Was 180, now 150
+      createRock(scene, WORLD_WIDTH - 250, WORLD_HEIGHT - 150, 1.3); // Was 180, now 150
+      createRock(scene, WORLD_WIDTH - 480, WORLD_HEIGHT - 230, 1.2); // Was 310, now 280
+
+      // Add collision between bullets and rocks
+      scene.physics.add.collider(
+        bullets,
+        rocks,
+        bulletHitRock,
+        undefined,
+        scene
+      );
+    }
+
+    // Helper function to create a rock with given parameters
+    function createRock(
+      scene: Phaser.Scene,
+      x: number,
+      y: number,
+      scale: number = 1
+    ) {
+      const rock = rocks.create(x, y, "rock");
+      rock.setScale(scale);
+      rock.refreshBody();
+      return rock;
+    }
+
+    function bulletHitRock(
+      bullet: Phaser.Physics.Arcade.Sprite,
+      rock: Phaser.Physics.Arcade.Sprite
+    ) {
+      // Create impact effect
+      const scene = game.scene.scenes[0];
+      const impact = scene.add.circle(bullet.x, bullet.y, 5, 0x888888, 0.8);
+      scene.tweens.add({
+        targets: impact,
+        scale: 2,
+        alpha: 0,
+        duration: 200,
+        onComplete: () => impact.destroy(),
+      });
+
+      // Add some dust particles for effect
+      const particles = scene.add.particles(bullet.x, bullet.y, "rock", {
+        speed: 50,
+        scale: { start: 0.1, end: 0 },
+        alpha: { start: 0.7, end: 0 },
+        lifespan: 500,
+        blendMode: "ADD",
+        quantity: 5,
+      });
+
+      // Auto-destroy the particle emitter after it's done
+      scene.time.delayedCall(500, () => {
+        particles.destroy();
+      });
+
+      // Destroy the bullet and its effects
+      const emitter = bullet.getData("emitter");
+      if (emitter) {
+        emitter.destroy();
+      }
+
+      // Remove from our custom tracking
+      bulletOwners.delete(bullet);
+
+      // Destroy the bullet
+      bullet.destroy();
     }
 
     // Function to spawn player at a specific spawn point
@@ -854,6 +946,21 @@ export default function Game() {
 
         // Generate bullet texture (8x8 pixels)
         bulletGraphics.generateTexture("bullet", 8, 8);
+
+        const rockGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+
+        // Draw a rock shape
+        rockGraphics.fillStyle(0x777777, 1); // Gray color for base
+        rockGraphics.fillCircle(16, 16, 16);
+
+        // Add some details to make it look more like a rock
+        rockGraphics.fillStyle(0x555555, 0.7); // Darker gray for details
+        rockGraphics.fillRect(5, 10, 8, 4);
+        rockGraphics.fillRect(20, 8, 6, 5);
+        rockGraphics.fillRect(12, 20, 10, 6);
+
+        // Generate rock texture (32x32 pixels)
+        rockGraphics.generateTexture("rock", 32, 32);
       });
     }
 
@@ -1282,105 +1389,6 @@ export default function Game() {
         // Spawn the player at the first spawn point - do this last to ensure everything else is ready
         this.time.delayedCall(100, () => {
           spawnPlayer(this, 0);
-
-          // Set up collision between bullets and the local player
-
-          // Set up collision between bullets and the local player
-          // this.physics.add.overlap(
-          //   bullets,
-          //   player,
-          //   (bullet: any, playerSprite: any) => {
-          //     // Only process if the bullet wasn't fired by this player and player is not invulnerable
-          //     if (bullet.getData("owner") !== socket?.id && !invulnerable) {
-          //       // Create hit effect
-          //       const hitEffect = this.add.circle(
-          //         bullet.x,
-          //         bullet.y,
-          //         10,
-          //         0xff0000,
-          //         0.7
-          //       );
-          //       this.tweens.add({
-          //         targets: hitEffect,
-          //         alpha: 0,
-          //         scale: 2,
-          //         duration: 200,
-          //         onComplete: () => hitEffect.destroy(),
-          //       });
-
-          //       // Reduce player health locally - this is the key change
-          //       // We'll still let the server validate, but we update locally for immediate feedback
-          //       playerHealth = Math.max(0, playerHealth - 1);
-
-          //       // Update the health display immediately
-          //       if (healthText) {
-          //         healthText.setText(`Health: ${playerHealth}`);
-          //       }
-
-          //       // Notify server about hit - only if we're hit by another player's bullet
-          //       if (socket) {
-          //         const shooterId = bullet.getData("owner");
-          //         console.log(
-          //           `CLIENT: About to send bulletHitMe event with shooterId: ${shooterId}, bullet data:`,
-          //           bullet.getData()
-          //         );
-
-          //         // Only send if we have a valid shooter ID
-          //         if (shooterId && shooterId !== "local") {
-          //           socket.emit("bulletHitMe", {
-          //             shooterId: shooterId,
-          //           });
-          //           console.log(
-          //             `CLIENT: Sent bulletHitMe event with shooterId: ${shooterId}`
-          //           );
-          //         } else {
-          //           console.log(
-          //             `CLIENT: Not sending bulletHitMe - invalid shooterId: ${shooterId}`
-          //           );
-          //         }
-          //       }
-
-          //       // Flash camera to indicate damage
-          //       this.cameras.main.flash(100, 255, 0, 0, 0.3);
-
-          //       // Show damage number floating up
-          //       const damageText = this.add.text(
-          //         player.x,
-          //         player.y - 20,
-          //         "-1",
-          //         {
-          //           fontSize: "22px",
-          //           color: "#ff0000",
-          //           stroke: "#000",
-          //           strokeThickness: 3,
-          //         }
-          //       );
-
-          //       this.tweens.add({
-          //         targets: damageText,
-          //         y: player.y - 60,
-          //         alpha: 0,
-          //         duration: 800,
-          //         onComplete: () => damageText.destroy(),
-          //       });
-
-          //       // Destroy the bullet and its effects
-          //       const emitter = bullet.getData("emitter");
-          //       if (emitter) {
-          //         emitter.destroy();
-          //       }
-          //       bullet.destroy();
-
-          //       // Only call playerDied if health reaches zero
-          //       if (playerHealth <= 0 && !respawnCooldown) {
-          //         console.log("Player health reached zero, calling playerDied");
-          //         playerDied(this);
-          //       }
-          //     }
-          //   },
-          //   undefined,
-          //   this
-          // );
         });
       } catch (error) {
         console.error("Error in create function:", error);
