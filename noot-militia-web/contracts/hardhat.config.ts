@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const config: HardhatUserConfig = {
-  defaultNetwork: "ZKsyncEraSepolia",
+  defaultNetwork: "abstractTestnet",
   networks: {
     ZKsyncEraSepolia: {
       url: "https://sepolia.era.zksync.dev",
@@ -15,6 +15,13 @@ const config: HardhatUserConfig = {
       verifyURL: "https://explorer.sepolia.era.zksync.dev/contract_verification",
       accounts: process.env.WALLET_PRIVATE_KEY ? [process.env.WALLET_PRIVATE_KEY] : [],
     },
+    abstractTestnet: {
+      url: "https://api.testnet.abs.xyz",
+      ethNetwork: "sepolia",
+      zksync: true,
+      verifyURL: "https://api-explorer-verify.testnet.abs.xyz/contract_verification",
+      accounts: process.env.WALLET_PRIVATE_KEY ? [process.env.WALLET_PRIVATE_KEY] : [],
+  },
     ZKsyncEraMainnet: {
       url: "https://mainnet.era.zksync.io",
       ethNetwork: "mainnet",
