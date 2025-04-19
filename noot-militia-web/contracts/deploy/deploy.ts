@@ -524,7 +524,7 @@ function logExplorerUrl(address: string, type: "address" | "tx") {
     );
   }
 }
-
+//Loading funds from EOA to smart account
 async function loadFundsToAccount(
   senderWallet: Wallet,
   smartAccountAddress: string,
