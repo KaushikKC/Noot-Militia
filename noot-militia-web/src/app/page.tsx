@@ -3,12 +3,18 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Image from "next/image";
-import logo from "../../public/removed-logo-noot.png";
+import dynamic from "next/dynamic";
+
+// Dynamically import the Game component with SSR disabled
+const Game = dynamic(() => import("@/components/Game"), {
+  ssr: false
+});
 
 export default function Home() {
   const [isHovering, setIsHovering] = useState(false);
   const [bullets, setBullets] = useState([]);
   const [particles, setParticles] = useState([]);
+  const [showGame, setShowGame] = useState(false);
 
   // Create bullet effect
   const createBullet = (startX, startY, angle) => {
@@ -54,40 +60,45 @@ export default function Home() {
   };
 
   // Random shooting effect
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Create random bullets from sides toward center
-      const side = Math.floor(Math.random() * 4); // 0: top, 1: right, 2: bottom, 3: left
-      let startX, startY, angle;
+  useEffect(
+    () => {
+      if (showGame) return; // Don't create random bullets if game is shown
 
-      switch (side) {
-        case 0: // top
-          startX = Math.random() * window.innerWidth;
-          startY = -10;
-          angle = Math.PI / 2 + (Math.random() - 0.5) * 0.5;
-          break;
-        case 1: // right
-          startX = window.innerWidth + 10;
-          startY = Math.random() * window.innerHeight * 0.7;
-          angle = Math.PI + (Math.random() - 0.5) * 0.5;
-          break;
-        case 2: // left
-          startX = -10;
-          startY = Math.random() * window.innerHeight * 0.7;
-          angle = 0 + (Math.random() - 0.5) * 0.5;
-          break;
-        default:
-          // random position on top half
-          startX = 50 + Math.random() * (window.innerWidth - 100);
-          startY = 50 + Math.random() * (window.innerHeight * 0.4);
-          angle = Math.random() * Math.PI * 2;
-      }
+      const interval = setInterval(() => {
+        // Create random bullets from sides toward center
+        const side = Math.floor(Math.random() * 4); // 0: top, 1: right, 2: bottom, 3: left
+        let startX, startY, angle;
 
-      createBullet(startX, startY, angle);
-    }, 300);
+        switch (side) {
+          case 0: // top
+            startX = Math.random() * window.innerWidth;
+            startY = -10;
+            angle = Math.PI / 2 + (Math.random() - 0.5) * 0.5;
+            break;
+          case 1: // right
+            startX = window.innerWidth + 10;
+            startY = Math.random() * window.innerHeight * 0.7;
+            angle = Math.PI + (Math.random() - 0.5) * 0.5;
+            break;
+          case 2: // left
+            startX = -10;
+            startY = Math.random() * window.innerHeight * 0.7;
+            angle = 0 + (Math.random() - 0.5) * 0.5;
+            break;
+          default:
+            // random position on top half
+            startX = 50 + Math.random() * (window.innerWidth - 100);
+            startY = 50 + Math.random() * (window.innerHeight * 0.4);
+            angle = Math.random() * Math.PI * 2;
+        }
 
-    return () => clearInterval(interval);
-  }, []);
+        createBullet(startX, startY, angle);
+      }, 300);
+
+      return () => clearInterval(interval);
+    },
+    [showGame]
+  );
 
   // Update bullets animation
   useEffect(
@@ -135,9 +146,37 @@ export default function Home() {
     [particles]
   );
 
+  // Handle game launch with animations
+  const handleLaunchGame = e => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    // Create explosion at button position
+    createExplosion(centerX, centerY);
+
+    // Create circular burst of bullets
+    for (let i = 0; i < 12; i++) {
+      const angle = Math.PI * 2 * i / 12;
+      setTimeout(() => {
+        createBullet(centerX, centerY, angle);
+      }, i * 50);
+    }
+
+    // Show game after a short delay to allow animations to play
+    setTimeout(() => {
+      setShowGame(true);
+    }, 600);
+  };
+
   // Title letter animation
   const titleText = "NOOT MILITIA";
   const letters = titleText.split("");
+
+  // If game is shown, render the Game component
+  if (showGame) {
+    return <Game />;
+  }
 
   return (
     <div className="h-screen w-full overflow-hidden relative">
@@ -300,22 +339,7 @@ export default function Home() {
           whileTap={{ scale: 0.95 }}
           onMouseEnter={() => setIsHovering(true)}
           onMouseLeave={() => setIsHovering(false)}
-          onClick={e => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const centerX = rect.left + rect.width / 2;
-            const centerY = rect.top + rect.height / 2;
-
-            // Create explosion at button position
-            createExplosion(centerX, centerY);
-
-            // Create circular burst of bullets
-            for (let i = 0; i < 12; i++) {
-              const angle = Math.PI * 2 * i / 12;
-              setTimeout(() => {
-                createBullet(centerX, centerY, angle);
-              }, i * 50);
-            }
-          }}
+          onClick={handleLaunchGame}
         >
           {/* Button Glow Effect */}
           <motion.div
