@@ -33,6 +33,8 @@ export default function Game() {
     // Add this with your other variables
     let bulletOwners = new Map(); // Map to track bullet owners separately from Phaser's data system
     let rocks: Phaser.Physics.Arcade.StaticGroup;
+    let killCount = 0;
+    let killCountText: Phaser.GameObjects.Text;
 
     // Multiplayer variables
     let socket: any;
@@ -48,6 +50,11 @@ export default function Game() {
     let respawnCooldown = false;
     let invulnerable = false; // Invulnerability after respawning
     let invulnerabilityTimer: Phaser.Time.TimerEvent;
+
+    let playerKills = new Map<string, number>(); // Map to track kills for each player
+    let leaderboardText: Phaser.GameObjects.Text;
+    let showLeaderboard = false;
+    let leaderboardKey: Phaser.Input.Keyboard.Key;
 
     // Game world configuration
     const WORLD_WIDTH = 3200; // Much wider world
@@ -631,32 +638,12 @@ export default function Game() {
             // Make player invisible until respawned
             otherPlayer.setVisible(false);
 
-            // If we killed them, show a message
+            // If we killed them, update kill count - redundant with playerKilled event but as backup
             if (data.killedBy === socket.id) {
-              const killText = scene.add
-                .text(
-                  scene.cameras.main.width / 2,
-                  100,
-                  "You killed a player!",
-                  {
-                    fontSize: "24px",
-                    color: "#00ff00",
-                    stroke: "#000",
-                    strokeThickness: 4,
-                  }
-                )
-                .setOrigin(0.5)
-                .setScrollFactor(0)
-                .setDepth(1000);
-
-              // Fade out after 2 seconds
-              scene.tweens.add({
-                targets: killText,
-                alpha: 0,
-                duration: 1000,
-                delay: 1000,
-                onComplete: () => killText.destroy(),
-              });
+              killCount++;
+              if (killCountText) {
+                killCountText.setText(`Kills: ${killCount}`);
+              }
             }
           }
         }
@@ -746,6 +733,98 @@ export default function Game() {
               duration: 500,
               onComplete: () => respawnEffect.destroy(),
             });
+          }
+        }
+      });
+
+      socket.on("playerKilled", (data: any) => {
+        if (!scene.scene.isActive()) return;
+
+        console.log(`SERVER: Player killed event received:`, data);
+
+        // Update kill counts for the killer
+        if (data.killedBy) {
+          const currentKills = playerKills.get(data.killedBy) || 0;
+          playerKills.set(data.killedBy, currentKills + 1);
+
+          // If it's us, update our kill count
+          if (data.killedBy === socket.id) {
+            killCount++;
+
+            // Update kill counter text
+            if (killCountText) {
+              killCountText.setText(`Kills: ${killCount}`);
+            }
+
+            // Show a kill notification
+            const killText = scene.add
+              .text(scene.cameras.main.width / 2, 100, "You killed a player!", {
+                fontSize: "24px",
+                color: "#00ff00",
+                stroke: "#000",
+                strokeThickness: 4,
+              })
+              .setOrigin(0.5)
+              .setScrollFactor(0)
+              .setDepth(1000);
+
+            // Fade out after 2 seconds
+            scene.tweens.add({
+              targets: killText,
+              alpha: 0,
+              duration: 1000,
+              delay: 1000,
+              onComplete: () => killText.destroy(),
+            });
+          }
+
+          // Update leaderboard if it's visible
+          if (showLeaderboard) {
+            updateLeaderboard(scene);
+          }
+        }
+      });
+
+      socket.on("allPlayerStats", (allStats: any) => {
+        if (!scene.scene.isActive()) return;
+
+        console.log("Received all player stats:", allStats);
+
+        // Clear existing stats
+        playerKills.clear();
+
+        // Update with server data
+        Object.entries(allStats).forEach(([id, stats]: [string, any]) => {
+          if (stats.kills !== undefined) {
+            playerKills.set(id, stats.kills);
+          }
+        });
+
+        // Update our kill count
+        if (socket && allStats[socket.id]?.kills !== undefined) {
+          killCount = allStats[socket.id].kills;
+          if (killCountText) {
+            killCountText.setText(`Kills: ${killCount}`);
+          }
+        }
+
+        // Update leaderboard if visible
+        if (showLeaderboard) {
+          updateLeaderboard(scene);
+        }
+      });
+
+      // Add this to handle receiving current player stats when joining a game
+      socket.on("playerStats", (stats: any) => {
+        if (!scene.scene.isActive()) return;
+
+        console.log("Received player stats from server:", stats);
+
+        // Update kill count if provided by server
+        if (stats.kills !== undefined) {
+          killCount = stats.kills;
+          if (killCountText) {
+            killCountText.setText(`Kills: ${killCount}`);
           }
         }
       });
@@ -1368,11 +1447,21 @@ export default function Game() {
           this
         );
 
-        // Add this code to display health on screen
-        healthText = this.add
-          .text(16, 16, `Health: ${playerHealth}`, {
+        // healthText = this.add
+        //   .text(16, 16, `Health: ${playerHealth}`, {
+        //     fontSize: "20px",
+        //     color: "#ffffff",
+        //     stroke: "#000000",
+        //     strokeThickness: 3,
+        //   })
+        //   .setScrollFactor(0)
+        //   .setDepth(1000);
+
+        // Add kill counter text
+        killCountText = this.add
+          .text(16, 48, `Kills: ${killCount}`, {
             fontSize: "20px",
-            color: "#ffffff",
+            color: "#00ff00",
             stroke: "#000000",
             strokeThickness: 3,
           })
@@ -1446,6 +1535,28 @@ export default function Game() {
           this
         );
 
+        leaderboardKey = this.input.keyboard.addKey(
+          Phaser.Input.Keyboard.KeyCodes.TAB
+        );
+
+        // Create the leaderboard (initially hidden)
+        leaderboardText = this.add
+          .text(
+            this.cameras.main.width - 250,
+            100,
+            "LEADERBOARD\n-------------\n",
+            {
+              fontSize: "18px",
+              color: "#ffffff",
+              backgroundColor: "#00000099",
+              padding: { x: 15, y: 15 },
+              align: "left",
+            }
+          )
+          .setScrollFactor(0)
+          .setDepth(1000)
+          .setVisible(false);
+
         if (player) {
           const myTag = this.add
             .text(player.x, player.y - 40, `You [${playerHealth}]`, {
@@ -1461,7 +1572,7 @@ export default function Game() {
         }
         // Add game title (fixed to camera)
         const title = this.add
-          .text(20, 20, "Mini Militia Game", {
+          .text(20, 20, "NOOT Militia Game", {
             fontSize: "32px",
             color: "#fff",
             stroke: "#000",
@@ -1796,6 +1907,18 @@ export default function Game() {
           });
         }
 
+        if (Phaser.Input.Keyboard.JustDown(leaderboardKey)) {
+          showLeaderboard = !showLeaderboard;
+          if (leaderboardText) {
+            leaderboardText.setVisible(showLeaderboard);
+
+            if (showLeaderboard) {
+              // Update leaderboard content when shown
+              updateLeaderboard(this);
+            }
+          }
+        }
+
         // BACKUP COLLISION DETECTION: Manually check for bullet collisions with player
         // This is a fallback in case the physics overlap doesn't trigger correctly
         if (player && !respawnCooldown && !invulnerable) {
@@ -1911,6 +2034,50 @@ export default function Game() {
       } catch (error) {
         console.error("Error in update function:", error);
       }
+    }
+
+    function updateLeaderboard(scene: Phaser.Scene) {
+      if (!leaderboardText) return;
+
+      // Create leaderboard string
+      let leaderboardContent = "LEADERBOARD\n-------------\n";
+
+      // Sort players by kill count
+      const sortedPlayers = Array.from(playerKills.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5); // Show top 5 players
+
+      // Add entries for each player
+      sortedPlayers.forEach(([id, kills], index) => {
+        // Highlight current player
+        const isCurrentPlayer = id === socket?.id;
+        const playerName = isCurrentPlayer
+          ? "YOU"
+          : `Player ${id.substring(0, 4)}`;
+        const color = isCurrentPlayer ? "#FFFF00" : "#FFFFFF";
+
+        leaderboardContent += `${index + 1}. ${playerName}: ${kills} kills\n`;
+      });
+
+      // If current player isn't in top 5, add them at the bottom
+      if (socket && !sortedPlayers.some(([id]) => id === socket.id)) {
+        const myKills = playerKills.get(socket.id) || 0;
+        const myRank =
+          Array.from(playerKills.entries())
+            .sort((a, b) => b[1] - a[1])
+            .findIndex(([id]) => id === socket.id) + 1;
+
+        leaderboardContent += `\n${myRank}. YOU: ${myKills} kills`;
+      }
+
+      // Update the leaderboard text
+      leaderboardText.setText(leaderboardContent);
+
+      // Position leaderboard at right side of screen
+      leaderboardText.setPosition(
+        scene.cameras.main.width - leaderboardText.width - 20,
+        100
+      );
     }
 
     // Add window resize listener
