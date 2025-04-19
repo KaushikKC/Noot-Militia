@@ -33,6 +33,8 @@ export default function Game() {
     // Add this with your other variables
     let bulletOwners = new Map(); // Map to track bullet owners separately from Phaser's data system
     let rocks: Phaser.Physics.Arcade.StaticGroup;
+    let killCount = 0;
+    let killCountText: Phaser.GameObjects.Text;
 
     // Multiplayer variables
     let socket: any;
@@ -48,6 +50,11 @@ export default function Game() {
     let respawnCooldown = false;
     let invulnerable = false; // Invulnerability after respawning
     let invulnerabilityTimer: Phaser.Time.TimerEvent;
+
+    let playerKills = new Map<string, number>(); // Map to track kills for each player
+    let leaderboardText: Phaser.GameObjects.Text;
+    let showLeaderboard = false;
+    let leaderboardKey: Phaser.Input.Keyboard.Key;
 
     // Game world configuration
     const WORLD_WIDTH = 3200; // Much wider world
@@ -126,22 +133,22 @@ export default function Game() {
       }
 
       // Add rocks on left platforms
-      createRock(scene, 250, WORLD_HEIGHT - 150, 1.2); // Was 150, now 120
-      createRock(scene, 350, WORLD_HEIGHT - 150, 1); // Was 150, now 120
-      createRock(scene, 500, WORLD_HEIGHT - 230, 1.3); // Was 310, now 280
+      createRock(scene, 250, WORLD_HEIGHT - 150, 1.2);
+      createRock(scene, 350, WORLD_HEIGHT - 150, 1);
+      createRock(scene, 500, WORLD_HEIGHT - 230, 1.3);
 
-      // Add rocks on middle platforms - adjusted for new platform heights
-      createRock(scene, WORLD_WIDTH / 2 - 200, WORLD_HEIGHT - 150, 1.4); // Was 180, now 150
-      createRock(scene, WORLD_WIDTH / 2 - 50, WORLD_HEIGHT - 150, 1); // Was 180, now 150
-      createRock(scene, WORLD_WIDTH / 2 + 30, WORLD_HEIGHT - 230, 1.2); // Was 330, now 300
-      createRock(scene, WORLD_WIDTH / 2 + 100, WORLD_HEIGHT - 230, 1); // Was 330, now 300
+      // Add rocks on middle platforms
+      createRock(scene, WORLD_WIDTH / 2 - 200, WORLD_HEIGHT - 150, 1.4);
+      createRock(scene, WORLD_WIDTH / 2 - 50, WORLD_HEIGHT - 150, 1);
+      createRock(scene, WORLD_WIDTH / 2 + 30, WORLD_HEIGHT - 230, 1.2);
+      createRock(scene, WORLD_WIDTH / 2 + 100, WORLD_HEIGHT - 230, 1);
 
-      // Add rocks on right platforms - adjusted for new platform heights
-      createRock(scene, WORLD_WIDTH - 350, WORLD_HEIGHT - 150, 1.1); // Was 180, now 150
-      createRock(scene, WORLD_WIDTH - 250, WORLD_HEIGHT - 150, 1.3); // Was 180, now 150
-      createRock(scene, WORLD_WIDTH - 480, WORLD_HEIGHT - 230, 1.2); // Was 310, now 280
+      // Add rocks on right platforms
+      createRock(scene, WORLD_WIDTH - 350, WORLD_HEIGHT - 150, 1.1);
+      createRock(scene, WORLD_WIDTH - 250, WORLD_HEIGHT - 150, 1.3);
+      createRock(scene, WORLD_WIDTH - 480, WORLD_HEIGHT - 230, 1.2);
 
-      // Add collision between bullets and rocks
+      // Make sure collision between bullets and rocks is established
       scene.physics.add.collider(
         bullets,
         rocks,
@@ -149,6 +156,18 @@ export default function Game() {
         undefined,
         scene
       );
+
+      // Also add collision between player and rocks
+      if (player) {
+        scene.physics.add.collider(player, rocks);
+      }
+
+      // Add collision between other players and rocks
+      if (otherPlayers) {
+        otherPlayers.forEach((otherPlayer) => {
+          scene.physics.add.collider(otherPlayer, rocks);
+        });
+      }
     }
 
     // Helper function to create a rock with given parameters
@@ -329,7 +348,7 @@ export default function Game() {
       otherPlayers = new Map();
 
       // Connect to the server
-      socket = io("http://localhost:4000"); // Replace with your server URL
+      socket = io("http://localhost:4000"); // Replace with your server URL if different
 
       // Handle current players data
       socket.on("currentPlayers", (players: any) => {
@@ -337,7 +356,24 @@ export default function Game() {
         if (!scene.scene.isActive()) return;
 
         Object.keys(players).forEach((id) => {
-          if (id !== socket.id) {
+          if (id === socket.id) {
+            // Handle our own player data - update health if server sent it
+            if (
+              players[id].health !== undefined &&
+              playerHealth !== players[id].health
+            ) {
+              playerHealth = players[id].health;
+              if (healthText) {
+                healthText.setText(`Health: ${playerHealth}`);
+              }
+            }
+
+            // Check if player is marked as dead on server
+            if (players[id].isDead && !respawnCooldown && player) {
+              respawnCooldown = true;
+              playerDied(scene);
+            }
+          } else {
             // Add other existing players
             addOtherPlayer(scene, players[id]);
           }
@@ -361,6 +397,16 @@ export default function Game() {
         if (otherPlayer) {
           otherPlayer.setPosition(playerInfo.x, playerInfo.y);
           otherPlayer.setFlipX(playerInfo.flipX);
+
+          // Update health if provided
+          if (playerInfo.health !== undefined) {
+            otherPlayer.setData("health", playerInfo.health);
+          }
+
+          // Update visibility based on death state
+          if (playerInfo.isDead !== undefined) {
+            otherPlayer.setVisible(!playerInfo.isDead);
+          }
         }
       });
 
@@ -397,12 +443,6 @@ export default function Game() {
           bullet.setData("owner", ownerId);
 
           console.log(`CLIENT: Created bullet with owner: ${ownerId}`);
-          console.log(
-            "BULLET TRACKER: ",
-            Array.from(bulletOwners.entries())
-              .map(([b, id]) => id)
-              .join(", ")
-          );
 
           // Add a trail effect
           const emitter = scene.add.particles(
@@ -426,12 +466,14 @@ export default function Game() {
         }
       });
 
-      // In your socket.on("playerDamaged") handler:
+      // Handle player damage events from server
       socket.on("playerDamaged", (data: any) => {
         if (!scene.scene.isActive()) return;
 
+        console.log(`SOCKET DEBUG: Received playerDamaged event:`, data);
+
         if (data.playerId === socket.id) {
-          // Log health before update
+          // This is damage to our player - trust the server's health value
           console.log(`CLIENT: Player Damaged Event - My ID: ${socket.id}`);
           console.log(
             `CLIENT: Health BEFORE: ${playerHealth}, AFTER: ${data.health}`
@@ -440,18 +482,22 @@ export default function Game() {
             `CLIENT: Invulnerable: ${invulnerable}, RespawnCooldown: ${respawnCooldown}`
           );
 
-          // Skip if player is invulnerable or in respawn cooldown
+          // Skip visual effects if player is invulnerable or in respawn cooldown
           if (invulnerable) {
-            console.log("CLIENT: Ignoring damage - player is invulnerable");
+            console.log(
+              "CLIENT: Visual effects skipped - player is invulnerable"
+            );
             return;
           }
 
           if (respawnCooldown) {
-            console.log("CLIENT: Ignoring damage - player in respawn cooldown");
+            console.log(
+              "CLIENT: Visual effects skipped - player in respawn cooldown"
+            );
             return;
           }
 
-          // Update our health
+          // Update our health to match server's value
           playerHealth = data.health;
 
           // Update the health display
@@ -464,7 +510,34 @@ export default function Game() {
 
           // Show damage number floating up
           if (player) {
-            // Damage text creation...
+            const damageText = scene.add
+              .text(player.x, player.y - 20, "-1", {
+                fontSize: "16px",
+                color: "#ff0000",
+                stroke: "#000",
+                strokeThickness: 3,
+              })
+              .setOrigin(0.5);
+
+            scene.tweens.add({
+              targets: damageText,
+              y: damageText.y - 30,
+              alpha: 0,
+              duration: 800,
+              onComplete: () => damageText.destroy(),
+            });
+
+            // Make player flash red briefly
+            scene.tweens.add({
+              targets: player,
+              tint: 0xff0000,
+              duration: 100,
+              yoyo: true,
+              repeat: 2,
+              onComplete: () => {
+                player?.clearTint();
+              },
+            });
           }
 
           // Check if we died (only if our health is 0 or less)
@@ -475,26 +548,75 @@ export default function Game() {
             console.log(`CLIENT: Player still has ${playerHealth} health left`);
           }
         } else {
+          // This is damage to another player
           console.log(
             `CLIENT: Other player ${data.playerId} damaged, health: ${data.health}`
           );
-          // Handle other player damage...
+
+          // Update other player's visual state if needed
+          const otherPlayer = otherPlayers.get(data.playerId);
+          if (otherPlayer) {
+            // Store the server-provided health
+            otherPlayer.setData("health", data.health);
+
+            // Show hit effect if we caused the damage
+            if (data.shooterId === socket.id) {
+              // Show hit marker for successful hit
+              const hitMarker = scene.add
+                .text(otherPlayer.x, otherPlayer.y, "HIT!", {
+                  fontSize: "16px",
+                  color: "#ffff00",
+                  stroke: "#000",
+                  strokeThickness: 3,
+                })
+                .setOrigin(0.5);
+
+              scene.tweens.add({
+                targets: hitMarker,
+                y: hitMarker.y - 30,
+                alpha: 0,
+                duration: 500,
+                onComplete: () => hitMarker.destroy(),
+              });
+            }
+          }
         }
       });
 
-      // Handle player death events
+      const originalEmit = socket.emit;
+      socket.emit = function (event: string, ...args: any[]) {
+        if (event === "bulletHitMe") {
+          console.log(`DEBUG: Sending bulletHitMe event:`, args[0]);
+        }
+        return originalEmit.apply(this, [event, ...args]);
+      };
+
+      // Handle player death events - controlled by server
       socket.on("playerDied", (data: any) => {
         if (!scene.scene.isActive()) return;
 
         if (data.playerId === socket.id) {
-          // We died - will be handled by our own death logic
-          // This is just a backup in case client-side detection fails
-          if (playerHealth > 0 && player) {
-            playerHealth = 0;
+          // We died - according to the server
+          console.log("CLIENT: Server notified us of our death");
+
+          // Force our health to 0 to match server
+          playerHealth = 0;
+
+          // Only call the death function if we're not already in respawn cooldown
+          if (!respawnCooldown && player) {
+            console.log("CLIENT: Processing death sequence");
             playerDied(scene);
+          } else {
+            console.log(
+              "CLIENT: Already in respawn cooldown, ignoring death notification"
+            );
           }
         } else {
           // Another player died
+          console.log(
+            `CLIENT: Player ${data.playerId} died, killed by ${data.killedBy}`
+          );
+
           const otherPlayer = otherPlayers.get(data.playerId);
           if (otherPlayer) {
             // Create death effect
@@ -516,65 +638,194 @@ export default function Game() {
             // Make player invisible until respawned
             otherPlayer.setVisible(false);
 
-            // If we killed them, show a message
+            // If we killed them, update kill count - redundant with playerKilled event but as backup
             if (data.killedBy === socket.id) {
-              const killText = scene.add
-                .text(
-                  scene.cameras.main.width / 2,
-                  100,
-                  "You killed a player!",
-                  {
-                    fontSize: "24px",
-                    color: "#00ff00",
-                    stroke: "#000",
-                    strokeThickness: 4,
-                  }
-                )
-                .setOrigin(0.5)
-                .setScrollFactor(0)
-                .setDepth(1000);
-
-              // Fade out after 2 seconds
-              scene.tweens.add({
-                targets: killText,
-                alpha: 0,
-                duration: 1000,
-                delay: 1000,
-                onComplete: () => killText.destroy(),
-              });
+              killCount++;
+              if (killCountText) {
+                killCountText.setText(`Kills: ${killCount}`);
+              }
             }
           }
         }
       });
 
-      // Handle player respawn events
+      // Handle player respawn events - controlled by server
       socket.on("playerRespawned", (data: any) => {
         if (!scene.scene.isActive()) return;
 
-        const otherPlayer = otherPlayers.get(data.playerId);
-        if (otherPlayer) {
-          // Make player visible again
-          otherPlayer.setVisible(true);
+        if (data.playerId === socket.id) {
+          // We respawned - server is instructing us to respawn
+          console.log("CLIENT: Server notified us to respawn");
 
-          // Move to respawn position
-          otherPlayer.setPosition(data.x, data.y);
-          otherPlayer.setData("health", 10);
+          // Reset respawn cooldown and update health
+          respawnCooldown = false;
+          playerHealth = 10;
 
-          // Show respawn effect
-          const respawnEffect = scene.add.circle(
-            data.x,
-            data.y,
-            40,
-            0x00ff00,
-            0.5
-          );
-          scene.tweens.add({
-            targets: respawnEffect,
-            alpha: 0,
-            scale: 2,
-            duration: 500,
-            onComplete: () => respawnEffect.destroy(),
-          });
+          // Cancel any respawn timer we might have running
+          if (player) {
+            // Make player visible and enable physics
+            player.setVisible(true);
+            player.body.enable = true;
+
+            // Move to the respawn position
+            player.setPosition(data.x, data.y);
+            player.setVelocity(0, 0);
+
+            // Update health display
+            if (healthText) {
+              healthText.setText(`Health: ${playerHealth}`);
+            }
+
+            // Hide death message if it's showing
+            if (deathMessageText) {
+              deathMessageText.setVisible(false);
+            }
+
+            // Set invulnerability period after respawn
+            invulnerable = true;
+            console.log("CLIENT: Player now invulnerable after respawn");
+
+            if (invulnerabilityTimer) {
+              invulnerabilityTimer.remove();
+            }
+
+            invulnerabilityTimer = scene.time.delayedCall(3000, () => {
+              invulnerable = false;
+              console.log("CLIENT: Player invulnerability ended");
+              if (player) {
+                player.clearAlpha(); // Reset alpha to normal
+              }
+            });
+
+            // Make player flash to indicate invulnerability
+            scene.tweens.add({
+              targets: player,
+              alpha: 0.5,
+              duration: 200,
+              ease: "Linear",
+              repeat: 14, // 15 flashes over 3 seconds
+              yoyo: true,
+            });
+          }
+        } else {
+          // Another player respawned
+          const otherPlayer = otherPlayers.get(data.playerId);
+          if (otherPlayer) {
+            // Make player visible again
+            otherPlayer.setVisible(true);
+
+            // Move to respawn position
+            otherPlayer.setPosition(data.x, data.y);
+            otherPlayer.setData("health", 10);
+
+            // Show respawn effect
+            const respawnEffect = scene.add.circle(
+              data.x,
+              data.y,
+              40,
+              0x00ff00,
+              0.5
+            );
+            scene.tweens.add({
+              targets: respawnEffect,
+              alpha: 0,
+              scale: 2,
+              duration: 500,
+              onComplete: () => respawnEffect.destroy(),
+            });
+          }
+        }
+      });
+
+      socket.on("playerKilled", (data: any) => {
+        if (!scene.scene.isActive()) return;
+
+        console.log(`SERVER: Player killed event received:`, data);
+
+        // Update kill counts for the killer
+        if (data.killedBy) {
+          const currentKills = playerKills.get(data.killedBy) || 0;
+          playerKills.set(data.killedBy, currentKills + 1);
+
+          // If it's us, update our kill count
+          if (data.killedBy === socket.id) {
+            killCount++;
+
+            // Update kill counter text
+            if (killCountText) {
+              killCountText.setText(`Kills: ${killCount}`);
+            }
+
+            // Show a kill notification
+            const killText = scene.add
+              .text(scene.cameras.main.width / 2, 100, "You killed a player!", {
+                fontSize: "24px",
+                color: "#00ff00",
+                stroke: "#000",
+                strokeThickness: 4,
+              })
+              .setOrigin(0.5)
+              .setScrollFactor(0)
+              .setDepth(1000);
+
+            // Fade out after 2 seconds
+            scene.tweens.add({
+              targets: killText,
+              alpha: 0,
+              duration: 1000,
+              delay: 1000,
+              onComplete: () => killText.destroy(),
+            });
+          }
+
+          // Update leaderboard if it's visible
+          if (showLeaderboard) {
+            updateLeaderboard(scene);
+          }
+        }
+      });
+
+      socket.on("allPlayerStats", (allStats: any) => {
+        if (!scene.scene.isActive()) return;
+
+        console.log("Received all player stats:", allStats);
+
+        // Clear existing stats
+        playerKills.clear();
+
+        // Update with server data
+        Object.entries(allStats).forEach(([id, stats]: [string, any]) => {
+          if (stats.kills !== undefined) {
+            playerKills.set(id, stats.kills);
+          }
+        });
+
+        // Update our kill count
+        if (socket && allStats[socket.id]?.kills !== undefined) {
+          killCount = allStats[socket.id].kills;
+          if (killCountText) {
+            killCountText.setText(`Kills: ${killCount}`);
+          }
+        }
+
+        // Update leaderboard if visible
+        if (showLeaderboard) {
+          updateLeaderboard(scene);
+        }
+      });
+
+      // Add this to handle receiving current player stats when joining a game
+      socket.on("playerStats", (stats: any) => {
+        if (!scene.scene.isActive()) return;
+
+        console.log("Received player stats from server:", stats);
+
+        // Update kill count if provided by server
+        if (stats.kills !== undefined) {
+          killCount = stats.kills;
+          if (killCountText) {
+            killCountText.setText(`Kills: ${killCount}`);
+          }
         }
       });
     }
@@ -596,30 +847,53 @@ export default function Game() {
 
         otherPlayer.setBounce(0.1);
         otherPlayer.setCollideWorldBounds(true);
+
+        // CRITICAL: Store player ID for collision detection
         otherPlayer.setData("playerId", playerInfo.playerId);
         otherPlayer.setData("health", playerInfo.health || 10);
+
+        // Set visibility based on isDead flag from server
+        if (playerInfo.isDead) {
+          otherPlayer.setVisible(false);
+        }
 
         // Add collision with platforms
         scene.physics.add.collider(otherPlayer, platforms);
 
-        // Add collision with bullets
+        // Add collision with rocks if they exist
+        if (rocks) {
+          scene.physics.add.collider(otherPlayer, rocks);
+        }
+
+        // CRITICAL FIX: Improved collision with bullets for other players
         scene.physics.add.overlap(
           bullets,
           otherPlayer,
           (bullet: any, target: any) => {
+            // Get bullet owner data
+            const bulletOwner =
+              bulletOwners.get(bullet) || bullet.getData("owner");
+            console.log(
+              `Bullet overlap with other player detected! Bullet owner: ${bulletOwner}, My ID: ${socket?.id}`
+            );
+
             // Only process bullet collision if the bullet was fired by this player
-            if (bullet.getData("owner") === socket?.id) {
+            if (bulletOwner === socket?.id) {
+              const targetId = target.getData("playerId");
               console.log(
-                `CLIENT: Bullet hit detected on another player with ID ${target.getData(
-                  "playerId"
-                )}`
+                `CLIENT: Bullet hit detected on another player with ID ${targetId}`
               );
 
-              // If this is our bullet hitting another player
-              // Emit hit event to server
-              socket.emit("bulletHit", {
-                targetId: target.getData("playerId"),
-              });
+              // Emit hit event to server with target ID
+              if (socket) {
+                socket.emit("bulletHit", {
+                  targetId: targetId,
+                });
+
+                console.log(
+                  `CLIENT: Sent bulletHit event to server for player ${targetId}`
+                );
+              }
 
               // Create hit effect
               const hitEffect = scene.add.circle(
@@ -642,6 +916,11 @@ export default function Game() {
               if (emitter) {
                 emitter.destroy();
               }
+
+              // Remove from tracking
+              bulletOwners.delete(bullet);
+
+              // Destroy the bullet
               bullet.destroy();
             }
           },
@@ -651,9 +930,57 @@ export default function Game() {
 
         // Store in our map
         otherPlayers.set(playerInfo.playerId, otherPlayer);
+
+        // Add player tag above character with health
+        createPlayerTag(scene, otherPlayer, playerInfo.playerId);
+
+        return otherPlayer;
       } catch (error) {
         console.error("Error adding other player:", error);
+        return null;
       }
+    }
+
+    // Helper function to create player tag/name display
+    function createPlayerTag(
+      scene: Phaser.Scene,
+      playerSprite: Phaser.Physics.Arcade.Sprite,
+      playerId: string
+    ) {
+      // Create a shortened ID for display (first 4 chars)
+      const displayId = playerId.substring(0, 4);
+
+      // Create the tag text
+      const tagText = scene.add
+        .text(
+          playerSprite.x,
+          playerSprite.y - 40,
+          `Player ${displayId} [${playerSprite.getData("health")}]`,
+          {
+            fontSize: "14px",
+            color: "#ffffff",
+            stroke: "#000000",
+            strokeThickness: 3,
+          }
+        )
+        .setOrigin(0.5)
+        .setDepth(100);
+
+      // Store reference to tag on player sprite
+      playerSprite.setData("nameTag", tagText);
+
+      // Update tag in scene's update loop
+      scene.events.on("update", () => {
+        if (playerSprite.active) {
+          tagText.setPosition(playerSprite.x, playerSprite.y - 40);
+          tagText.setText(
+            `Player ${displayId} [${playerSprite.getData("health")}]`
+          );
+          tagText.setVisible(playerSprite.visible);
+        } else {
+          tagText.destroy();
+        }
+      });
     }
 
     // Function to handle player death
@@ -662,16 +989,11 @@ export default function Game() {
       console.log("Player health:", playerHealth);
       console.log("respawnCooldown:", respawnCooldown);
 
-      // Safety checks - prevent death if player has health or is already respawning
+      // Safety checks - prevent death if player is already respawning
       if (!player || respawnCooldown) {
         console.log(
           "DEATH ABORTED: Player doesn't exist or already respawning"
         );
-        return;
-      }
-
-      if (playerHealth > 0) {
-        console.log("DEATH ABORTED: Player still has health, not dying");
         return;
       }
 
@@ -734,17 +1056,66 @@ export default function Game() {
       player.setVelocity(0, 0);
       player.body.enable = false;
 
-      // Set respawn timer
-      scene.time.delayedCall(3000, () => {
-        console.log("Respawn timer completed. Respawning player...");
+      // Hide player tag if it exists
+      const nameTag = player.getData("nameTag");
+      if (nameTag && nameTag.active) {
+        nameTag.setVisible(false);
+      }
 
-        // Hide death message
-        if (deathMessageText) {
-          deathMessageText.setVisible(false);
+      // Notify server of our death if not already handled
+      // This is a backup in case the server somehow missed that we died
+      if (socket) {
+        socket.emit("playerDied");
+        console.log("CLIENT: Sent playerDied event to server as backup");
+      }
+
+      // NOTE: We don't need to set a respawn timer here
+      // The server will send a playerRespawned event when it's time
+
+      // However, as a failsafe, we can set a longer client-side respawn timer
+      // in case server response is lost
+      scene.time.delayedCall(5000, () => {
+        // Only respawn if we're still dead after 5 seconds (server might have failed)
+        if (respawnCooldown && playerHealth <= 0) {
+          console.log(
+            "CLIENT: Server respawn message not received - emergency respawn"
+          );
+
+          // Choose a random spawn point
+          const spawnPointIndex = Math.floor(
+            Math.random() * SPAWN_POINTS.length
+          );
+          const spawnPoint = SPAWN_POINTS[spawnPointIndex];
+
+          // Respawn locally
+          playerHealth = 10;
+          respawnCooldown = false;
+
+          if (player) {
+            player.setVisible(true);
+            player.body.enable = true;
+            player.setPosition(spawnPoint.x, spawnPoint.y);
+
+            // Show player tag again
+            const nameTag = player.getData("nameTag");
+            if (nameTag && nameTag.active) {
+              nameTag.setVisible(true);
+            }
+          }
+
+          // Notify server of our emergency respawn
+          if (socket) {
+            socket.emit("playerRespawned", {
+              x: spawnPoint.x,
+              y: spawnPoint.y,
+            });
+          }
+
+          // Hide death message
+          if (deathMessageText) {
+            deathMessageText.setVisible(false);
+          }
         }
-
-        // Respawn at random spawn point
-        spawnPlayer(scene, Math.floor(Math.random() * SPAWN_POINTS.length));
       });
     }
 
@@ -761,22 +1132,34 @@ export default function Game() {
 
       // Create a bullet at the player's position
       const bulletX = player.flipX ? player.x - 20 : player.x + 20;
-      const bullet = bullets.create(bulletX, player.y - 5, "bullet");
+      const bulletY = player.y - 5;
 
-      console.log(`CLIENT: Firing bullet - Owner: ${socket?.id || "local"}`);
-
-      // Set bullet properties
+      // Create bullet with explicit physics body
+      const bullet = bullets.create(bulletX, bulletY, "bullet");
       bullet.setCollideWorldBounds(false);
-      bullet.body.allowGravity = false;
-      bullet.setVelocityX(player.flipX ? -400 : 400); // Direction based on player facing
 
-      // Store owner ID in both ways
+      // CRITICAL: Make sure gravity is disabled for bullets
+      if (bullet.body) {
+        bullet.body.allowGravity = false;
+      }
+
+      // Set bullet velocity based on player direction
+      const bulletVelocity = player.flipX ? -400 : 400;
+      bullet.setVelocityX(bulletVelocity);
+
+      console.log(
+        `CLIENT: Firing bullet - Owner: ${
+          socket?.id || "local"
+        } at position ${bulletX},${bulletY}`
+      );
+
+      // IMPORTANT: Store owner ID in both ways - this is critical for collision detection
       const ownerId = socket?.id || "local";
       bullet.setData("owner", ownerId);
       bulletOwners.set(bullet, ownerId); // Our custom tracking
 
-      // Add a trail effect using the updated Phaser API
-      const emitter = scene.add.particles(bulletX, player.y - 5, "bullet", {
+      // Add a trail effect
+      const emitter = scene.add.particles(bulletX, bulletY, "bullet", {
         speed: 20,
         scale: { start: 0.2, end: 0 },
         alpha: { start: 0.5, end: 0 },
@@ -792,7 +1175,7 @@ export default function Game() {
       lastFired = time;
 
       // Add a simple muzzle flash effect
-      const flash = scene.add.circle(bulletX, player.y - 5, 6, 0xffff00, 0.8);
+      const flash = scene.add.circle(bulletX, bulletY, 6, 0xffff00, 0.8);
       scene.tweens.add({
         targets: flash,
         scale: 0,
@@ -805,37 +1188,73 @@ export default function Game() {
       if (socket) {
         socket.emit("playerShoot", {
           x: bulletX,
-          y: player.y - 5,
-          velocityX: player.flipX ? -400 : 400,
+          y: bulletY,
+          velocityX: bulletVelocity,
           playerId: socket.id,
         });
       }
-    }
 
+      return bullet;
+    }
     // Function to handle bullet-platform collision
     function bulletHitPlatform(
       bullet: Phaser.Physics.Arcade.Sprite,
       platform: Phaser.Physics.Arcade.Sprite
     ) {
-      // Create impact effect
-      const scene = game.scene.scenes[0];
-      const impact = scene.add.circle(bullet.x, bullet.y, 5, 0xffff00, 0.8);
-      scene.tweens.add({
-        targets: impact,
-        scale: 2,
-        alpha: 0,
-        duration: 200,
-        onComplete: () => impact.destroy(),
-      });
+      try {
+        // Get the scene from game instance
+        const scene = game.scene.scenes[0];
 
-      // Destroy the particle emitter if it exists
-      const emitter = bullet.getData("emitter");
-      if (emitter) {
-        emitter.destroy();
+        // Create impact effect
+        const impact = scene.add.circle(bullet.x, bullet.y, 5, 0xffff00, 0.8);
+        scene.tweens.add({
+          targets: impact,
+          scale: 2,
+          alpha: 0,
+          duration: 200,
+          onComplete: () => impact.destroy(),
+        });
+
+        // Add dust particles for more realistic impact
+        const particles = scene.add.particles(bullet.x, bullet.y, "bullet", {
+          speed: { min: 20, max: 50 },
+          angle: { min: 0, max: 360 },
+          scale: { start: 0.2, end: 0 },
+          alpha: { start: 0.7, end: 0 },
+          lifespan: { min: 100, max: 300 },
+          blendMode: "ADD",
+          quantity: 8,
+        });
+
+        // Auto-destroy particles after they're done
+        scene.time.delayedCall(300, () => {
+          if (particles && particles.active) {
+            particles.destroy();
+          }
+        });
+
+        // Destroy the particle emitter if it exists
+        const emitter = bullet.getData("emitter");
+        if (emitter) {
+          emitter.destroy();
+        }
+
+        // IMPORTANT: Remove from our tracking system to prevent memory leaks
+        bulletOwners.delete(bullet);
+
+        // Destroy the bullet
+        bullet.destroy();
+      } catch (error) {
+        console.error("Error in bulletHitPlatform:", error);
+
+        // Fallback clean-up in case of error
+        if (bullet) {
+          const emitter = bullet.getData("emitter");
+          if (emitter) emitter.destroy();
+          bulletOwners.delete(bullet);
+          bullet.destroy();
+        }
       }
-
-      // Destroy the bullet
-      bullet.destroy();
     }
 
     // Configuration for our Phaser game
@@ -1028,6 +1447,27 @@ export default function Game() {
           this
         );
 
+        // healthText = this.add
+        //   .text(16, 16, `Health: ${playerHealth}`, {
+        //     fontSize: "20px",
+        //     color: "#ffffff",
+        //     stroke: "#000000",
+        //     strokeThickness: 3,
+        //   })
+        //   .setScrollFactor(0)
+        //   .setDepth(1000);
+
+        // Add kill counter text
+        killCountText = this.add
+          .text(16, 48, `Kills: ${killCount}`, {
+            fontSize: "20px",
+            color: "#00ff00",
+            stroke: "#000000",
+            strokeThickness: 3,
+          })
+          .setScrollFactor(0)
+          .setDepth(1000);
+
         // ADD YOUR NEW CODE HERE - collision detection for bullets hitting player
         this.physics.add.overlap(
           bullets,
@@ -1037,13 +1477,27 @@ export default function Game() {
             const bulletOwner =
               bulletOwners.get(bullet) || bullet.getData("owner");
 
-            // Only process if the bullet wasn't fired by this player and player is not invulnerable
+            console.log(
+              `Bullet collision detected! Owner: ${bulletOwner}, My ID: ${socket?.id}`
+            );
+
+            // Only process if the bullet wasn't fired by this player
+            // and player is not invulnerable or in respawn cooldown
             if (
               bulletOwner !== socket?.id &&
               !invulnerable &&
               !respawnCooldown
             ) {
-              // Create hit effect
+              console.log(`CLIENT: I was hit by bullet from ${bulletOwner}`);
+
+              // Tell server we were hit
+              if (socket) {
+                socket.emit("bulletHitMe", {
+                  shooterId: bulletOwner,
+                });
+              }
+
+              // Create hit effect - purely visual, health reduction happens on server
               const hitEffect = this.add.circle(
                 bullet.x,
                 bullet.y,
@@ -1059,85 +1513,66 @@ export default function Game() {
                 onComplete: () => hitEffect.destroy(),
               });
 
-              // Reduce player health locally - this is the key change
-              // We'll still let the server validate, but we update locally for immediate feedback
-              const oldHealth = playerHealth;
-              playerHealth = Math.max(0, playerHealth - 1);
-
-              console.log(
-                `CLIENT: Player health ${oldHealth} -> ${playerHealth}`
-              );
-
-              // Update the health display immediately
-              if (healthText) {
-                healthText.setText(`Health: ${playerHealth}`);
-              }
-
-              // Notify server about hit - only if we're hit by another player's bullet
-              if (socket) {
-                const shooterId = bulletOwner;
-                console.log(
-                  `CLIENT: About to send bulletHitMe event with shooterId: ${shooterId}`
-                );
-
-                // Only send if we have a valid shooter ID
-                if (shooterId && shooterId !== "local") {
-                  socket.emit("bulletHitMe", {
-                    shooterId: shooterId,
-                  });
-                  console.log(
-                    `CLIENT: Sent bulletHitMe event with shooterId: ${shooterId}`
-                  );
-                } else {
-                  console.log(
-                    `CLIENT: Not sending bulletHitMe - invalid shooterId: ${shooterId}`
-                  );
-                }
-              }
-
-              // Flash camera to indicate damage
-              this.cameras.main.flash(100, 255, 0, 0, 0.3);
-
-              // Show damage number floating up
-              const damageText = this.add.text(player.x, player.y - 20, "-1", {
-                fontSize: "22px",
-                color: "#ff0000",
-                stroke: "#000",
-                strokeThickness: 3,
-              });
-
+              // Flash the player to indicate damage
               this.tweens.add({
-                targets: damageText,
-                y: player.y - 60,
-                alpha: 0,
-                duration: 800,
-                onComplete: () => damageText.destroy(),
+                targets: player,
+                alpha: 0.3,
+                duration: 100,
+                yoyo: true,
+                repeat: 2,
               });
 
-              // Destroy the bullet and its effects
+              // Destroy bullet
               const emitter = bullet.getData("emitter");
               if (emitter) {
                 emitter.destroy();
               }
-
-              // Remove from our tracking before destroying
               bulletOwners.delete(bullet);
               bullet.destroy();
-
-              // IMPORTANT FIX: Check if health is now zero and call playerDied
-              if (playerHealth <= 0 && !respawnCooldown) {
-                console.log("CLIENT: Health now zero, calling playerDied");
-                playerDied(this);
-              }
             }
           },
           undefined,
           this
         );
 
+        leaderboardKey = this.input.keyboard.addKey(
+          Phaser.Input.Keyboard.KeyCodes.TAB
+        );
+
+        // Create the leaderboard (initially hidden)
+        leaderboardText = this.add
+          .text(
+            this.cameras.main.width - 250,
+            100,
+            "LEADERBOARD\n-------------\n",
+            {
+              fontSize: "18px",
+              color: "#ffffff",
+              backgroundColor: "#00000099",
+              padding: { x: 15, y: 15 },
+              align: "left",
+            }
+          )
+          .setScrollFactor(0)
+          .setDepth(1000)
+          .setVisible(false);
+
+        if (player) {
+          const myTag = this.add
+            .text(player.x, player.y - 40, `You [${playerHealth}]`, {
+              fontSize: "14px",
+              color: "#FFFF00",
+              stroke: "#000000",
+              strokeThickness: 3,
+            })
+            .setOrigin(0.5)
+            .setDepth(100);
+
+          player.setData("nameTag", myTag);
+        }
         // Add game title (fixed to camera)
         const title = this.add
-          .text(20, 20, "Mini Militia Game", {
+          .text(20, 20, "NOOT Militia Game", {
             fontSize: "32px",
             color: "#fff",
             stroke: "#000",
@@ -1397,288 +1832,252 @@ export default function Game() {
 
     // Update game state (runs on every frame)
     function update(this: Phaser.Scene) {
-      // Add a strong null check at the top
-      if (!player || !player.body || !player.body.enable || !cursors) return;
+      try {
+        // Only process if player exists
+        if (!player) return;
 
-      // Handle left and right movement
-      if (
-        cursors.left.isDown ||
-        this.input.keyboard?.checkDown(this.input.keyboard.addKey("A"))
-      ) {
-        // Move left
-        if (player && player.body && player.body.enable) {
+        // Skip all player movement/controls if player is dead or in respawn cooldown
+        if (respawnCooldown) return;
+
+        // Track if player has moved
+        let hasMovement = false;
+
+        // Handle movement logic
+        if (
+          cursors.left?.isDown ||
+          this.input.keyboard.checkDown(
+            this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+            150
+          )
+        ) {
           player.setVelocityX(-160);
-          player.setFlipX(true); // Flip the sprite to face left
-          player.anims.play("left", true);
-        }
-      } else if (
-        cursors.right.isDown ||
-        this.input.keyboard?.checkDown(this.input.keyboard.addKey("D"))
-      ) {
-        // Move right
-        if (player && player.body && player.body.enable) {
+          player.setFlipX(true);
+          hasMovement = true;
+        } else if (
+          cursors.right?.isDown ||
+          this.input.keyboard.checkDown(
+            this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
+            150
+          )
+        ) {
           player.setVelocityX(160);
-          player.setFlipX(false); // Reset the sprite to face right
-          player.anims.play("right", true);
-        }
-      } else {
-        // Stand still
-        if (player && player.body && player.body.enable) {
+          player.setFlipX(false);
+          hasMovement = true;
+        } else {
           player.setVelocityX(0);
-          player.anims.play("turn");
         }
-      }
 
-      // Allow jumping if touching the ground, but NOT with spacebar
-      if (
-        (cursors.up.isDown ||
-          this.input.keyboard?.checkDown(this.input.keyboard.addKey("W"))) &&
-        player &&
-        player.body &&
-        player.body.enable &&
-        player.body.touching.down
-      ) {
-        player.setVelocityY(-330);
-      }
+        // Handle jumping
+        if (
+          (cursors.up?.isDown ||
+            this.input.keyboard.checkDown(
+              this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+              150
+            )) &&
+          player.body.touching.down
+        ) {
+          player.setVelocityY(-330);
+          hasMovement = true;
+        }
 
-      // Fire bullet with spacebar
-      if (spaceKey && spaceKey.isDown) {
-        if (player && player.visible && player.body && player.body.enable) {
+        // Handle shooting
+        if (spaceKey.isDown) {
           fireBullet(this);
         }
-      }
 
-      // Clean up bullets that are out of bounds
-      if (bullets) {
-        bullets.getChildren().forEach((bullet: any) => {
+        // Send player position and state to server if it changed
+        if (
+          socket &&
+          (player.x !== prevX ||
+            player.y !== prevY ||
+            player.flipX !== prevFlipX ||
+            hasMovement)
+        ) {
+          // Update previous position
+          prevX = player.x;
+          prevY = player.y;
+          prevFlipX = player.flipX;
+
+          // Send position to server along with current health
+          socket.emit("playerMovement", {
+            x: player.x,
+            y: player.y,
+            flipX: player.flipX,
+            health: playerHealth, // Send current health with movement
+          });
+        }
+
+        if (Phaser.Input.Keyboard.JustDown(leaderboardKey)) {
+          showLeaderboard = !showLeaderboard;
+          if (leaderboardText) {
+            leaderboardText.setVisible(showLeaderboard);
+
+            if (showLeaderboard) {
+              // Update leaderboard content when shown
+              updateLeaderboard(this);
+            }
+          }
+        }
+
+        // BACKUP COLLISION DETECTION: Manually check for bullet collisions with player
+        // This is a fallback in case the physics overlap doesn't trigger correctly
+        if (player && !respawnCooldown && !invulnerable) {
+          const playerBounds = player.getBounds();
+
+          bullets.getChildren().forEach((bulletObj: any) => {
+            const bullet = bulletObj as Phaser.Physics.Arcade.Sprite;
+            const bulletOwner =
+              bulletOwners.get(bullet) || bullet.getData("owner");
+
+            // Skip bullets fired by this player
+            if (bulletOwner === socket?.id) return;
+
+            const bulletBounds = bullet.getBounds();
+
+            // Manual collision detection
+            if (Phaser.Geom.Rectangle.Overlaps(playerBounds, bulletBounds)) {
+              console.log(
+                "MANUAL COLLISION DETECTED between bullet and player!"
+              );
+
+              // Emit hit to server
+              if (socket) {
+                socket.emit("bulletHitMe", {
+                  shooterId: bulletOwner,
+                });
+              }
+
+              // Create hit effect
+              const hitEffect = this.add.circle(
+                bullet.x,
+                bullet.y,
+                10,
+                0xff0000,
+                0.7
+              );
+              this.tweens.add({
+                targets: hitEffect,
+                alpha: 0,
+                scale: 2,
+                duration: 200,
+                onComplete: () => hitEffect.destroy(),
+              });
+
+              // Clean up the bullet
+              const emitter = bullet.getData("emitter");
+              if (emitter) emitter.destroy();
+              bulletOwners.delete(bullet);
+              bullet.destroy();
+            }
+          });
+        }
+
+        // Handle bullets that go too far off screen
+        bullets.getChildren().forEach((bulletObj: any) => {
+          const bullet = bulletObj as Phaser.Physics.Arcade.Sprite;
           if (
             bullet.x < -50 ||
-            bullet.x > WORLD_WIDTH + 50 ||
+            bullet.x > this.physics.world.bounds.width + 50 ||
             bullet.y < -50 ||
-            bullet.y > WORLD_HEIGHT + 50
+            bullet.y > this.physics.world.bounds.height + 50
           ) {
-            // Clean up particle effects
-            const emitter = bullet.getData ? bullet.getData("emitter") : null;
+            // Clean up particle emitter if it exists
+            const emitter = bullet.getData("emitter");
             if (emitter) {
               emitter.destroy();
             }
+
+            // Remove from our custom bullet tracking
+            bulletOwners.delete(bullet);
+
+            // Destroy the bullet
             bullet.destroy();
           }
         });
-      }
 
-      if (healthText) {
-        // Show more detailed info including invulnerable status
-        const statusText = invulnerable
-          ? " (INVULNERABLE)"
-          : respawnCooldown
-          ? " (RESPAWNING)"
-          : "";
-        healthText.setText(`Health: ${playerHealth}${statusText}`);
-      }
-
-      bullets.getChildren().forEach((bullet: any) => {
-        if (bullet.x < -100 || bullet.x > WORLD_WIDTH + 100) {
-          console.log("Cleaning up out-of-bounds bullet");
-          // Remove from tracking
-          bulletOwners.delete(bullet);
-
-          // Clean up emitter
-          const emitter = bullet.getData ? bullet.getData("emitter") : null;
-          if (emitter) {
-            emitter.destroy();
+        // Update player tags
+        if (player) {
+          const myTag = player.getData("nameTag");
+          if (myTag && myTag.active) {
+            myTag.setPosition(player.x, player.y - 40);
+            myTag.setText(`You [${playerHealth}]`);
+            myTag.setVisible(player.visible);
           }
-
-          // Destroy bullet
-          bullet.destroy();
         }
+
+        // Update other player tags
+        otherPlayers?.forEach((otherPlayer) => {
+          const nameTag = otherPlayer.getData("nameTag");
+          if (nameTag && nameTag.active) {
+            nameTag.setPosition(otherPlayer.x, otherPlayer.y - 40);
+            nameTag.setText(
+              `Player ${otherPlayer
+                .getData("playerId")
+                .substring(0, 4)} [${otherPlayer.getData("health")}]`
+            );
+            nameTag.setVisible(otherPlayer.visible);
+          }
+        });
+
+        // Update health display to ensure it's showing the latest value
+        if (healthText) {
+          healthText.setText(`Health: ${playerHealth}`);
+        }
+
+        // Check for player falling off the world
+        if (player && player.y > this.physics.world.bounds.height + 100) {
+          if (socket && !respawnCooldown) {
+            socket.emit("playerDied");
+            playerDied(this);
+          }
+        }
+      } catch (error) {
+        console.error("Error in update function:", error);
+      }
+    }
+
+    function updateLeaderboard(scene: Phaser.Scene) {
+      if (!leaderboardText) return;
+
+      // Create leaderboard string
+      let leaderboardContent = "LEADERBOARD\n-------------\n";
+
+      // Sort players by kill count
+      const sortedPlayers = Array.from(playerKills.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5); // Show top 5 players
+
+      // Add entries for each player
+      sortedPlayers.forEach(([id, kills], index) => {
+        // Highlight current player
+        const isCurrentPlayer = id === socket?.id;
+        const playerName = isCurrentPlayer
+          ? "YOU"
+          : `Player ${id.substring(0, 4)}`;
+        const color = isCurrentPlayer ? "#FFFF00" : "#FFFFFF";
+
+        leaderboardContent += `${index + 1}. ${playerName}: ${kills} kills\n`;
       });
 
-      if (player && player.visible && !invulnerable && !respawnCooldown) {
-        // Manual bullet collision detection that bypasses Phaser's data system entirely
-        bullets.getChildren().forEach((bullet: any) => {
-          // Skip bullets that we own
-          if (bulletOwners.get(bullet) === socket?.id) {
-            return;
-          }
+      // If current player isn't in top 5, add them at the bottom
+      if (socket && !sortedPlayers.some(([id]) => id === socket.id)) {
+        const myKills = playerKills.get(socket.id) || 0;
+        const myRank =
+          Array.from(playerKills.entries())
+            .sort((a, b) => b[1] - a[1])
+            .findIndex(([id]) => id === socket.id) + 1;
 
-          // Check for collision with player using simple distance check
-          const dx = player.x - bullet.x;
-          const dy = player.y - bullet.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-
-          // If bullet is close enough to player, count as hit
-          if (distance < 25) {
-            // Adjust this value based on sprite sizes
-            console.log("DIRECT HIT DETECTION: Bullet hit player!");
-
-            // Get the owner for logging but don't rely on it
-            const ownerId = bulletOwners.get(bullet) || "unknown";
-            console.log(`DIRECT HIT: Bullet from ${ownerId}`);
-
-            // Reduce health directly (never below 0)
-            const oldHealth = playerHealth;
-            playerHealth = Math.max(0, playerHealth - 1);
-
-            console.log(
-              `DIRECT HIT: Health reduced ${oldHealth} -> ${playerHealth}`
-            );
-
-            // Update health text
-            if (healthText) {
-              healthText.setText(`Health: ${playerHealth}`);
-            }
-
-            // Flash the camera
-            this.cameras.main.flash(100, 255, 0, 0, 0.3);
-
-            // Create hit effect
-            const hitEffect = this.add.circle(
-              bullet.x,
-              bullet.y,
-              10,
-              0xff0000,
-              0.7
-            );
-            this.tweens.add({
-              targets: hitEffect,
-              alpha: 0,
-              scale: 2,
-              duration: 200,
-              onComplete: () => hitEffect.destroy(),
-            });
-
-            // Only trigger death if health reached 0
-            if (playerHealth === 0 && !respawnCooldown) {
-              console.log("DIRECT HIT: Health reached 0, calling playerDied");
-              playerDied(this);
-            }
-
-            // Clean up the bullet
-            const emitter = bullet.getData ? bullet.getData("emitter") : null;
-            if (emitter) {
-              emitter.destroy();
-            }
-            bulletOwners.delete(bullet);
-            bullet.destroy();
-          }
-        });
+        leaderboardContent += `\n${myRank}. YOU: ${myKills} kills`;
       }
 
-      if (player && !player.visible && playerHealth > 0 && !respawnCooldown) {
-        console.log(
-          "CLIENT: Emergency recovery - player was invisible but health > 0"
-        );
-        player.setVisible(true);
-        player.body.enable = true;
-      }
+      // Update the leaderboard text
+      leaderboardText.setText(leaderboardContent);
 
-      // Visual indicator for invulnerability
-      if (player && player.visible) {
-        // Toggle alpha for invulnerable players
-        if (invulnerable) {
-          // The player already has tweens for this, but we can update text
-          if (healthText) {
-            healthText.setText(`Health: ${playerHealth} (INVULNERABLE)`);
-          }
-        } else {
-          if (healthText) {
-            healthText.setText(`Health: ${playerHealth}`);
-          }
-        }
-      }
-
-      // Update minimap player marker position
-      if (player && player.visible) {
-        const minimapPlayerMarker = this.children.getByName(
-          "minimapPlayerMarker"
-        );
-        if (minimapPlayerMarker) {
-          const minimapWidth = 200;
-          const minimapHeight = 100;
-          const minimapX = this.cameras.main.width - minimapWidth - 20;
-          const minimapY = this.cameras.main.height - minimapHeight - 20;
-
-          minimapPlayerMarker.setPosition(
-            minimapX + (player.x / WORLD_WIDTH) * minimapWidth,
-            minimapY + (player.y / WORLD_HEIGHT) * minimapHeight
-          );
-        }
-      }
-
-      // Update UI elements that need to follow the camera
-      const fullscreenButton = this.children.getByName("fullscreenButton");
-      if (fullscreenButton) {
-        fullscreenButton.setPosition(this.cameras.main.width - 20, 20);
-      }
-
-      // Update death message position
-      if (deathMessageText && deathMessageText.visible) {
-        deathMessageText.setPosition(
-          this.cameras.main.width / 2,
-          this.cameras.main.height / 2
-        );
-      }
-
-      // Send position updates to server if player has moved and is alive
-      if (
-        player &&
-        player.visible &&
-        player.body &&
-        player.body.enable &&
-        socket
-      ) {
-        const x = player.x;
-        const y = player.y;
-        const flipX = player.flipX;
-
-        if (prevX !== x || prevY !== y || prevFlipX !== flipX) {
-          socket.emit("playerMovement", {
-            x: x,
-            y: y,
-            flipX: flipX,
-            health: playerHealth,
-          });
-
-          // Update previous position
-          prevX = x;
-          prevY = y;
-          prevFlipX = flipX;
-        }
-      }
-
-      // Update other players on minimap
-      if (otherPlayers) {
-        otherPlayers.forEach((otherPlayer, playerId) => {
-          // Skip if player is not visible (e.g., during respawn)
-          if (!otherPlayer.visible) return;
-
-          const minimapWidth = 200;
-          const minimapHeight = 100;
-          const minimapX = this.cameras.main.width - minimapWidth - 20;
-          const minimapY = this.cameras.main.height - minimapHeight - 20;
-
-          // Get or create minimap marker for this player
-          let marker = this.children.getByName(`minimap-player-${playerId}`);
-          if (!marker) {
-            marker = this.add
-              .circle(0, 0, 4, 0xff4a4a)
-              .setDepth(1000)
-              .setName(`minimap-player-${playerId}`);
-          }
-
-          // Update marker position
-          marker.setPosition(
-            minimapX + (otherPlayer.x / WORLD_WIDTH) * minimapWidth,
-            minimapY + (otherPlayer.y / WORLD_HEIGHT) * minimapHeight
-          );
-        });
-      }
-
-      // Update health display position
-      if (healthText) {
-        healthText.setPosition(20, 220);
-      }
+      // Position leaderboard at right side of screen
+      leaderboardText.setPosition(
+        scene.cameras.main.width - leaderboardText.width - 20,
+        100
+      );
     }
 
     // Add window resize listener
