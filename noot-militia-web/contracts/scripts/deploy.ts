@@ -8,7 +8,7 @@ async function main() {
   const contract = await ethers.deployContract(CONTRACT_NAME, ARGS, {});
   await contract.waitForDeployment();
   const contractAddress = await contract.getAddress();
-  console.log(`${CONTRACT_NAME} deployed to ${contractAddress}`);
+  console.log(`${CONTRACT_NAME} deployed to ${contractAddress}`)
 }
 
 main()
