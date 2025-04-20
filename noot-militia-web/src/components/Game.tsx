@@ -266,12 +266,10 @@ export default function Game() {
       if (!player) {
         try {
           console.log("Creating new player at", spawnPoint.x, spawnPoint.y);
+
+          const texture = Math.random() > 0.5 ? "player" : "noot";
           // Create player sprite at the specified spawn point
-          player = scene.physics.add.sprite(
-            spawnPoint.x,
-            spawnPoint.y,
-            "player"
-          );
+          player = scene.physics.add.sprite(spawnPoint.x, spawnPoint.y, "noot");
 
           // Set player properties
           player.setBounce(0.1);
@@ -839,10 +837,11 @@ export default function Game() {
       }
 
       try {
+        const texture = Math.random() > 0.5 ? "player2" : "noot";
         const otherPlayer = scene.physics.add.sprite(
           playerInfo.x,
           playerInfo.y,
-          "player2" // Use the red player sprite for other players
+          "noot" // Use the red player sprite for other players
         );
 
         otherPlayer.setBounce(0.1);
@@ -1194,6 +1193,11 @@ export default function Game() {
         });
       }
 
+      if (player.texture.key === "noot") {
+        const nootSound = this.sound.add("nootSound");
+        nootSound.play();
+      }
+
       return bullet;
     }
     // Function to handle bullet-platform collision
@@ -1287,6 +1291,17 @@ export default function Game() {
 
     // Preload game assets
     function preload(this: Phaser.Scene) {
+      // this.load.audio("nootSound", [
+      //   {
+      //     type: "sine",
+      //     frequency: 440,
+      //     attack: 0.1,
+      //     decay: 0.2,
+      //     sustain: 0.3,
+      //     release: 0.2,
+      //     duration: 0.5,
+      //   },
+      // ]);
       // Create a simple ground texture if we don't have an asset
       this.load.on("complete", () => {
         // Create a graphics object for the ground
@@ -1353,6 +1368,63 @@ export default function Game() {
         // Generate player2 texture (32x32 pixels)
         player2Graphics.generateTexture("player2", 32, 32);
 
+        const nootGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+        nootGraphics.clear();
+
+        // Size parameters (64x64 texture)
+        const size = 64;
+        const centerX = size / 2;
+        const centerY = size / 2;
+
+        // DARK BODY (using arcs instead of ellipse)
+        nootGraphics.fillStyle(0x222222, 1);
+        nootGraphics.beginPath();
+        // Main body (approximating ellipse with arcs)
+        nootGraphics.arc(centerX - 5, centerY, 18, 0, Math.PI * 1);
+        // Neck curve
+        nootGraphics.arc(centerX + 10, centerY - 12, 10, 0, Math.PI * 2);
+        nootGraphics.fill();
+
+        // ORANGE BEAK (triangle works fine)
+        nootGraphics.fillStyle(0xff9900, 1);
+        nootGraphics.beginPath();
+        nootGraphics.moveTo(centerX + 18, centerY - 10);
+        nootGraphics.lineTo(centerX + 30, centerY - 8);
+        nootGraphics.lineTo(centerX + 18, centerY - 2);
+        nootGraphics.closePath();
+        nootGraphics.fill();
+
+        // SINGLE EYE (using circle)
+        nootGraphics.fillStyle(0x000000, 1);
+        nootGraphics.beginPath();
+        nootGraphics.arc(centerX + 8, centerY - 12, 5, 0, Math.PI * 2);
+        nootGraphics.fill();
+
+        // EYE HIGHLIGHT
+        nootGraphics.fillStyle(0xffffff, 1);
+        nootGraphics.beginPath();
+        nootGraphics.arc(centerX + 6, centerY - 13, 2, 0, Math.PI * 2);
+        nootGraphics.fill();
+
+        // LEGS (using rectangles)
+        nootGraphics.fillStyle(0xff9900, 1);
+        // Upper legs
+        nootGraphics.fillRect(centerX - 8, centerY + 15, 6, 10);
+        nootGraphics.fillRect(centerX + 2, centerY + 15, 6, 10);
+        // Feet
+        nootGraphics.fillRect(centerX - 10, centerY + 25, 10, 5);
+        nootGraphics.fillRect(centerX, centerY + 25, 10, 5);
+
+        // WING (using arc and line)
+        nootGraphics.fillStyle(0x444444, 1);
+        nootGraphics.beginPath();
+        nootGraphics.arc(centerX - 5, centerY + 5, 12, -0.5, 0.5);
+        nootGraphics.lineTo(centerX - 5, centerY + 5);
+        nootGraphics.closePath();
+        nootGraphics.fill();
+
+        // Generate texture
+        nootGraphics.generateTexture("noot", size, size);
         // Create a bullet graphic
         const bulletGraphics = this.make.graphics({ x: 0, y: 0, add: false });
 
@@ -1876,7 +1948,8 @@ export default function Game() {
             )) &&
           player.body.touching.down
         ) {
-          player.setVelocityY(-330);
+          const jumpPower = player.texture.key === "noot" ? -400 : -330;
+          player.setVelocityY(jumpPower);
           hasMovement = true;
         }
 
