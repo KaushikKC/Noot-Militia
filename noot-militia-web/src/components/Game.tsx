@@ -93,32 +93,33 @@ export default function Game() {
 
       // Add some platforms throughout the world for more interesting gameplay
       // Left side platforms - reduced height by 30
+      // Left side platforms - reduced height by 30
       platforms
-        .create(300, WORLD_HEIGHT - 120, "ground") // Was 120, now 90
+        .create(300, WORLD_HEIGHT - 150, "ground") // Was 120, now 150 (30 higher)
         .setScale(3, 0.5)
         .refreshBody();
       platforms
-        .create(500, WORLD_HEIGHT - 200, "ground") // Was 280, now 250
+        .create(500, WORLD_HEIGHT - 280, "ground") // Was 200, now 230 (30 higher)
         .setScale(2, 0.5)
         .refreshBody();
 
       // Middle platforms - reduced height by 30
       platforms
-        .create(WORLD_WIDTH / 2 - 150, WORLD_HEIGHT - 120, "ground") // Was 150, now 120
+        .create(WORLD_WIDTH / 2 - 150, WORLD_HEIGHT - 150, "ground") // Was 120, now 150 (30 higher)
         .setScale(4, 0.5)
         .refreshBody();
       platforms
-        .create(WORLD_WIDTH / 2 + 80, WORLD_HEIGHT - 200, "ground") // Was 300, now 270
+        .create(WORLD_WIDTH / 2 + 80, WORLD_HEIGHT - 280, "ground") // Was 200, now 230 (30 higher)
         .setScale(3, 0.5)
         .refreshBody();
 
       // Right side platforms - reduced height by 30
       platforms
-        .create(WORLD_WIDTH - 300, WORLD_HEIGHT - 120, "ground") // Was 150, now 120
+        .create(WORLD_WIDTH - 300, WORLD_HEIGHT - 150, "ground") // Was 120, now 150 (30 higher)
         .setScale(3, 0.5)
         .refreshBody();
       platforms
-        .create(WORLD_WIDTH - 500, WORLD_HEIGHT - 200, "ground") // Was 280, now 250
+        .create(WORLD_WIDTH - 500, WORLD_HEIGHT - 280, "ground") // Was 200, now 230 (30 higher)
         .setScale(2, 0.5)
         .refreshBody();
 
@@ -133,20 +134,20 @@ export default function Game() {
       }
 
       // Add rocks on left platforms
-      createRock(scene, 250, WORLD_HEIGHT - 150, 1.2);
-      createRock(scene, 350, WORLD_HEIGHT - 150, 1);
-      createRock(scene, 500, WORLD_HEIGHT - 230, 1.3);
+      createRock(scene, 250, WORLD_HEIGHT - 180, 1.2); // Was 150, now 180 (30 higher)
+      createRock(scene, 350, WORLD_HEIGHT - 180, 1); // Was 150, now 180 (30 higher)
+      createRock(scene, 500, WORLD_HEIGHT - 310, 1.3); // Was 230, now 260 (30 higher)
 
       // Add rocks on middle platforms
-      createRock(scene, WORLD_WIDTH / 2 - 200, WORLD_HEIGHT - 150, 1.4);
-      createRock(scene, WORLD_WIDTH / 2 - 50, WORLD_HEIGHT - 150, 1);
-      createRock(scene, WORLD_WIDTH / 2 + 30, WORLD_HEIGHT - 230, 1.2);
-      createRock(scene, WORLD_WIDTH / 2 + 100, WORLD_HEIGHT - 230, 1);
+      createRock(scene, WORLD_WIDTH / 2 - 200, WORLD_HEIGHT - 180, 1.4); // Was 150, now 180 (30 higher)
+      createRock(scene, WORLD_WIDTH / 2 - 50, WORLD_HEIGHT - 180, 1); // Was 150, now 180 (30 higher)
+      createRock(scene, WORLD_WIDTH / 2 + 30, WORLD_HEIGHT - 310, 1.2); // Was 230, now 260 (30 higher)
+      createRock(scene, WORLD_WIDTH / 2 + 100, WORLD_HEIGHT - 310, 1); // Was 230, now 260 (30 higher)
 
       // Add rocks on right platforms
-      createRock(scene, WORLD_WIDTH - 350, WORLD_HEIGHT - 150, 1.1);
-      createRock(scene, WORLD_WIDTH - 250, WORLD_HEIGHT - 150, 1.3);
-      createRock(scene, WORLD_WIDTH - 480, WORLD_HEIGHT - 230, 1.2);
+      createRock(scene, WORLD_WIDTH - 350, WORLD_HEIGHT - 180, 1.1); // Was 150, now 180 (30 higher)
+      createRock(scene, WORLD_WIDTH - 250, WORLD_HEIGHT - 180, 1.3); // Was 150, now 180 (30 higher)
+      createRock(scene, WORLD_WIDTH - 480, WORLD_HEIGHT - 310, 1.2); // Was 230, now 260 (30 higher)
 
       // Make sure collision between bullets and rocks is established
       scene.physics.add.collider(
