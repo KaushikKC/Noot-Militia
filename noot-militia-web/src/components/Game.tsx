@@ -1113,7 +1113,7 @@ export default function Game() {
       const playerLabel = scene.add
         .text(
           0,
-          -40,
+          -90,
           `${playerInfo.playerId.substring(0, 5)} [${initialHealth}]`,
           {
             fontSize: "14px",
@@ -1130,7 +1130,7 @@ export default function Game() {
         delay: 10,
         callback: () => {
           if (otherPlayer.active && playerLabel.active) {
-            playerLabel.setPosition(otherPlayer.x, otherPlayer.y - 40);
+            playerLabel.setPosition(otherPlayer.x, otherPlayer.y - 70);
           }
         },
         loop: true,
