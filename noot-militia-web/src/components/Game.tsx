@@ -127,6 +127,56 @@ export default function Game() {
       createRocks(scene);
     }
 
+    function setupRockCollisions(scene: Phaser.Scene) {
+      if (!rocks || !player) return;
+
+      // Create a custom collision handler that checks if the player is jumping
+      // We define "jumping" as having a negative vertical velocity (moving upward)
+      scene.physics.add.collider(player, rocks, (playerObj, rockObj) => {
+        const player = playerObj as Phaser.Physics.Arcade.Sprite;
+
+        // If player is coming from above the rock (jumping/falling onto it)
+        if (player.body.velocity.y >= 0 && player.body.touching.down) {
+          // Allow landing on top of rocks
+          return true;
+        }
+
+        // If player is jumping upward, let them pass through the bottom of rocks
+        if (player.body.velocity.y < -100 && player.body.touching.up) {
+          // Optional: Add a small upward boost when hitting a rock from below while jumping
+          // player.setVelocityY(-300);
+          return false; // Let them pass through
+        }
+
+        // In all other cases (horizontal collision), block the player
+        return true;
+      });
+
+      // Similar collision handling for other players if in multiplayer
+      if (otherPlayers) {
+        otherPlayers.forEach((otherPlayer) => {
+          scene.physics.add.collider(
+            otherPlayer,
+            rocks,
+            (playerObj, rockObj) => {
+              const player = playerObj as Phaser.Physics.Arcade.Sprite;
+
+              // Same logic for other players
+              if (player.body.velocity.y >= 0 && player.body.touching.down) {
+                return true; // Allow landing on top
+              }
+
+              if (player.body.velocity.y < -100 && player.body.touching.up) {
+                return false; // Allow passing from below when jumping
+              }
+
+              return true; // Block horizontal movement
+            }
+          );
+        });
+      }
+    }
+
     function createRocks(scene: Phaser.Scene) {
       // Create the rocks group (needs to be defined at the top with other game objects)
       if (!rocks) {
@@ -158,6 +208,8 @@ export default function Game() {
         scene
       );
 
+      setupRockCollisions(scene);
+
       // Also add collision between player and rocks
       if (player) {
         scene.physics.add.collider(player, rocks);
@@ -178,9 +230,28 @@ export default function Game() {
       y: number,
       scale: number = 1
     ) {
+      // Create the rock with proper body size and offset
       const rock = rocks.create(x, y, "rock");
       rock.setScale(scale);
+
+      // Important: Adjust the hitbox size to better match the rock's visible area
+      // The default hitbox might be too small or imprecisely positioned
+      const hitboxWidth = rock.width * 0.8; // 80% of the texture width
+      const hitboxHeight = rock.height * 0.9; // 90% of the texture height
+
+      // Set the body size and offset it to align with the visible rock
+      rock.body.setSize(hitboxWidth, hitboxHeight);
+      rock.body.setOffset(
+        (rock.width - hitboxWidth) / 2,
+        (rock.height - hitboxHeight) / 2
+      );
+
+      // Make sure the rock is immovable
+      rock.body.immovable = true;
+
+      // Refreshes the physics body to apply our changes
       rock.refreshBody();
+
       return rock;
     }
 
@@ -292,6 +363,8 @@ export default function Game() {
           if (platforms) {
             scene.physics.add.collider(player, platforms);
           }
+
+          createRocks(scene);
 
           // Make camera follow the player
           scene.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
