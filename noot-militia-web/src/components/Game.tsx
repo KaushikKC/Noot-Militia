@@ -50,6 +50,10 @@ export default function Game() {
     let respawnCooldown = false;
     let invulnerable = false; // Invulnerability after respawning
     let invulnerabilityTimer: Phaser.Time.TimerEvent;
+    let allBullets: {
+      bullet: Phaser.Physics.Arcade.Sprite;
+      ownerId: string;
+    }[] = [];
 
     let playerKills = new Map<string, number>(); // Map to track kills for each player
     let leaderboardText: Phaser.GameObjects.Text;
@@ -508,7 +512,7 @@ export default function Game() {
 
           // If position is below ground level, correct it
           if (validY > WORLD_HEIGHT - GROUND_HEIGHT) {
-            validY = WORLD_HEIGHT - GROUND_HEIGHT - 10; // Keep slightly above ground
+            validY = WORLD_HEIGHT - GROUND_HEIGHT - 0; // Keep slightly above ground
             console.log(
               `Correcting player ${playerInfo.playerId} Y position from ${currentY} to ${validY}`
             );
@@ -586,6 +590,13 @@ export default function Game() {
 
         const otherPlayer = otherPlayers.get(playerId);
         if (otherPlayer) {
+          // Destroy the player label if it exists
+          const playerLabel = otherPlayer.getData("label");
+          if (playerLabel) {
+            playerLabel.destroy();
+          }
+
+          // Destroy the player
           otherPlayer.destroy();
           otherPlayers.delete(playerId);
         }
@@ -601,32 +612,31 @@ export default function Game() {
         try {
           const bullet = bullets.create(bulletData.x, bulletData.y, "bullet");
 
-          // Set a unique name for the bullet (using the ID from server or generating one)
+          // IMPORTANT: Explicitly set the bullet origin and size for better collision
+          bullet.setOrigin(0.5, 0.5);
+          bullet.setDisplaySize(8, 8); // Make sure bullet has a good size for collision
+
+          // Generate a unique ID for this bullet
           const bulletId =
             bulletData.bulletId ||
-            `remote_bullet_${Date.now()}_${Math.random()}`;
-          bullet.setName(bulletId);
+            `remote_bullet_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
           bullet.setCollideWorldBounds(false);
           bullet.body.allowGravity = false;
           bullet.setVelocityX(bulletData.velocityX);
           bullet.setVelocityY(0); // Ensure horizontal movement only
 
-          // Triple redundancy for bullet ownership - to fix the "no owner" warning
+          // Store the owner ID directly on the bullet object in multiple ways
           const ownerId = bulletData.playerId || "unknown";
-
-          // 1. Store in our custom map using the bullet ID
-          bulletOwners.set(bulletId, ownerId);
-
-          // 2. Store directly on the bullet using Phaser's data manager
           bullet.setData("owner", ownerId);
-          bullet.setData("ownerId", ownerId); // Alternative property name
+          bullet.setData("ownerId", ownerId);
+          bullet.setData("bulletId", bulletId);
 
-          // 3. Add as a custom property
-          bullet.owner = ownerId;
+          // Add to the global tracking array - this is the most reliable method
+          allBullets.push({ bullet, ownerId });
 
           console.log(
-            `CLIENT: Created remote bullet ${bulletId} with owner: ${ownerId}`
+            `CLIENT: Created remote bullet with ID ${bulletId}, owner: ${ownerId}`
           );
 
           // Add a trail effect
@@ -644,15 +654,35 @@ export default function Game() {
             }
           );
 
-          // Store emitter in our custom tracker too
+          // Store emitter reference for cleanup
           bullet.setData("emitter", emitter);
 
-          // Add collision with rocks
+          // Add explicit collision handling with rocks
           if (rocks) {
             scene.physics.add.overlap(
               bullet,
               rocks,
               bulletHitRock,
+              null,
+              scene
+            );
+          }
+
+          // Add collision with local player if not shot by us
+          if (player && ownerId !== socket.id) {
+            // Direct inline collision handler for THIS bullet with OUR player
+            scene.physics.add.overlap(
+              bullet,
+              player,
+              (bullet, player) => {
+                console.log(
+                  `Direct collision detected: Remote bullet hit local player`
+                );
+                bulletHitPlayer(
+                  bullet as Phaser.Physics.Arcade.Sprite,
+                  player as Phaser.Physics.Arcade.Sprite
+                );
+              },
               null,
               scene
             );
@@ -666,8 +696,10 @@ export default function Game() {
               if (bulletEmitter && bulletEmitter.active) {
                 bulletEmitter.destroy();
               }
-              // Remove from tracking
-              bulletOwners.delete(bulletId);
+
+              // Remove from tracking array
+              allBullets = allBullets.filter((b) => b.bullet !== bullet);
+
               // Destroy
               bullet.destroy();
             }
@@ -1063,16 +1095,52 @@ export default function Game() {
         );
       }
 
-      // Create the player with the validated position
+      // Create the player with the validated position and bigger size
       const otherPlayer = scene.physics.add
         .sprite(playerInfo.x, yPosition, "noot")
-        .setScale(1.0);
+        .setScale(1.0); // Increased size
+
+      // IMPORTANT: Set a larger collision body for better bullet detection
+      const bodyWidth = otherPlayer.width * 0.8;
+      const bodyHeight = otherPlayer.height;
+      otherPlayer.body.setSize(bodyWidth, bodyHeight);
+      otherPlayer.body.setOffset((otherPlayer.width - bodyWidth) / 2, 0);
+
+      // Get initial health or default to 10
+      const initialHealth = playerInfo.health || 10;
+
+      // Display player ID and health above the character
+      const playerLabel = scene.add
+        .text(
+          0,
+          -40,
+          `${playerInfo.playerId.substring(0, 5)} [${initialHealth}]`,
+          {
+            fontSize: "14px",
+            color: "#ffffff",
+            backgroundColor: "#000000",
+            padding: { x: 3, y: 2 },
+          }
+        )
+        .setOrigin(0.5, 0.5);
+
+      // Make the label follow the player
+      otherPlayer.setData("label", playerLabel);
+      scene.time.addEvent({
+        delay: 10,
+        callback: () => {
+          if (otherPlayer.active && playerLabel.active) {
+            playerLabel.setPosition(otherPlayer.x, otherPlayer.y - 40);
+          }
+        },
+        loop: true,
+      });
 
       // Add necessary properties
       otherPlayer.setBounce(0.1);
       otherPlayer.setCollideWorldBounds(true);
       otherPlayer.setData("playerId", playerInfo.playerId);
-      otherPlayer.setData("health", playerInfo.health || 10);
+      otherPlayer.setData("health", initialHealth);
 
       // Set up animations for other players if they exist
       if (scene.anims.exists("noot_idle")) {
@@ -1091,16 +1159,26 @@ export default function Game() {
       // Add this player to our map of other players
       otherPlayers.set(playerInfo.playerId, otherPlayer);
 
-      // Set up bullet collisions for this player
-      if (bullets) {
-        scene.physics.add.overlap(
-          bullets,
-          otherPlayer,
-          bulletHitPlayer,
-          bulletHitPlayerCheck,
-          scene
-        );
-      }
+      // IMPORTANT: Set up collisions for ALL existing bullets with this player
+      allBullets.forEach((bulletInfo) => {
+        if (
+          bulletInfo.bullet.active &&
+          bulletInfo.ownerId !== playerInfo.playerId
+        ) {
+          scene.physics.add.overlap(
+            bulletInfo.bullet,
+            otherPlayer,
+            (bullet, otherPlayer) => {
+              bulletHitPlayer(
+                bullet as Phaser.Physics.Arcade.Sprite,
+                otherPlayer as Phaser.Physics.Arcade.Sprite
+              );
+            },
+            null,
+            scene
+          );
+        }
+      });
     }
 
     function correctPlayerPositions(scene: Phaser.Scene) {
@@ -1127,31 +1205,61 @@ export default function Game() {
     }
 
     function setupBulletCollisions(scene: Phaser.Scene) {
-      // Create bullet vs player collision
-      scene.physics.add.overlap(
-        bullets,
-        player,
-        bulletHitPlayer,
-        bulletHitPlayerCheck,
-        scene
-      );
+      console.log("Setting up global bullet collision system");
 
-      // Create bullet vs other players collision
-      otherPlayers.forEach((otherPlayer) => {
-        scene.physics.add.overlap(
-          bullets,
-          otherPlayer,
-          bulletHitPlayer,
-          bulletHitPlayerCheck,
-          scene
-        );
+      // This function now creates a system that will be checked each frame
+      // rather than relying on Phaser's built-in collision
+
+      // Create an update event that checks for collisions each frame
+      scene.events.on("update", () => {
+        // Skip if no bullets or players
+        if (!bullets || (!player && (!otherPlayers || otherPlayers.size === 0)))
+          return;
+
+        // For each active bullet
+        allBullets.forEach((bulletInfo) => {
+          const bullet = bulletInfo.bullet;
+          const ownerId = bulletInfo.ownerId;
+
+          if (!bullet.active) return;
+
+          // Check collision with player (if it's not the owner)
+          if (player && player.active && ownerId !== socket.id) {
+            if (
+              Phaser.Geom.Intersects.RectangleToRectangle(
+                bullet.getBounds(),
+                player.getBounds()
+              )
+            ) {
+              console.log(
+                "Manual collision detection: Bullet hit local player"
+              );
+              bulletHitPlayer(bullet, player);
+              return; // Skip further checks for this bullet
+            }
+          }
+
+          // Check collision with other players
+          if (otherPlayers) {
+            otherPlayers.forEach((otherPlayer, playerId) => {
+              if (!otherPlayer.active || ownerId === playerId) return;
+
+              if (
+                Phaser.Geom.Intersects.RectangleToRectangle(
+                  bullet.getBounds(),
+                  otherPlayer.getBounds()
+                )
+              ) {
+                console.log(
+                  `Manual collision detection: Bullet hit other player ${playerId}`
+                );
+                bulletHitPlayer(bullet, otherPlayer);
+                return; // Skip further checks for this bullet
+              }
+            });
+          }
+        });
       });
-
-      // Create bullet vs rocks collision
-      scene.physics.add.overlap(bullets, rocks, bulletHitRock, null, scene);
-
-      // Create bullet vs ground collision
-      scene.physics.add.overlap(bullets, platforms, bulletHitRock, null, scene);
     }
 
     function bulletHitPlayer(
@@ -1163,36 +1271,46 @@ export default function Game() {
 
       console.log("Bullet hit player at:", bullet.x, bullet.y);
 
-      // Get the bullet ID
-      const bulletId = bullet.name;
+      // IMPORTANT: Find the bullet in our global tracking array (most reliable)
+      const bulletInfo = allBullets.find((b) => b.bullet === bullet);
 
-      // Multi-strategy approach to find the bullet owner:
-      let bulletOwnerId = null;
+      // Determine bullet owner using multiple strategies
+      let bulletOwnerId: string;
 
-      // Try method 1: custom map with bullet ID
-      if (bulletId && bulletOwners.has(bulletId)) {
-        bulletOwnerId = bulletOwners.get(bulletId);
-        console.log(`Found bullet owner via map: ${bulletOwnerId}`);
-      }
-      // Try method 2: direct Phaser data properties
-      else if (bullet.getData("owner")) {
+      if (bulletInfo) {
+        // Strategy 1: Use our global array (most reliable)
+        bulletOwnerId = bulletInfo.ownerId;
+        console.log(`Found bullet owner via global array: ${bulletOwnerId}`);
+      } else if (bullet.getData("owner")) {
+        // Strategy 2: Use Phaser's data manager
         bulletOwnerId = bullet.getData("owner");
         console.log(`Found bullet owner via getData: ${bulletOwnerId}`);
-      }
-      // Try method 3: custom property
-      else if (bullet.owner) {
-        bulletOwnerId = bullet.owner;
-        console.log(`Found bullet owner via property: ${bulletOwnerId}`);
-      }
-      // Fallback
-      else {
-        console.log("WARNING: Bullet with no owner hit a player");
+      } else {
+        // Fallback for debugging
+        console.log("WARNING: Bullet with no identifiable owner hit a player");
         bulletOwnerId = "unknown";
       }
 
-      // Get hit player ID - the player that was hit
-      const hitPlayerId =
-        playerHit === player ? socket.id : safeGetData(playerHit, "playerId");
+      // Determine which player was hit
+      let hitPlayerId: string;
+
+      if (playerHit === player) {
+        // If the local player was hit
+        hitPlayerId = socket.id;
+        console.log(`Local player hit by bullet from: ${bulletOwnerId}`);
+      } else {
+        // If another player was hit, get their ID
+        hitPlayerId = playerHit.getData("playerId");
+        console.log(
+          `Other player ${hitPlayerId} hit by bullet from: ${bulletOwnerId}`
+        );
+
+        // If we can't determine the hit player's ID, log it but continue
+        if (!hitPlayerId) {
+          console.log("WARNING: Could not determine hit player's ID");
+          hitPlayerId = "unknown";
+        }
+      }
 
       // Skip if the bullet hit its owner
       if (bulletOwnerId === hitPlayerId) {
@@ -1200,7 +1318,7 @@ export default function Game() {
         return;
       }
 
-      // Create hit effect
+      // Create hit effect immediately to confirm the hit was detected
       const scene = bullet.scene;
       const hitEffect = scene.add.circle(bullet.x, bullet.y, 8, 0xffff00, 0.8);
       scene.tweens.add({
@@ -1233,13 +1351,48 @@ export default function Game() {
       if (hitPlayerId === socket.id) {
         // Tell the server this bullet hit me
         if (socket && !invulnerable && !respawnCooldown) {
+          // IMPORTANT: Enhanced debugging to trace server communication
+          console.log(`---> SENDING bulletHitMe EVENT TO SERVER <---`);
+          console.log(`Shooter ID: ${bulletOwnerId}`);
+          console.log(`My position: ${player?.x},${player?.y}`);
+          console.log(`Bullet position: ${bullet.x},${bullet.y}`);
+
+          // CRITICAL FIX: Add more information to the hit event
           socket.emit("bulletHitMe", {
             shooterId: bulletOwnerId,
+            timestamp: Date.now(),
+            position: { x: player?.x, y: player?.y },
+            bulletPosition: { x: bullet.x, y: bullet.y },
           });
+
+          // Also apply damage locally as a backup, in case the server doesn't respond
+          // This will be corrected when the server sends back the official health
+          if (playerHealth > 0) {
+            console.log("Applying local damage as backup");
+            playerHealth = Math.max(0, playerHealth - 1);
+            if (healthText) {
+              healthText.setText(`Health: ${playerHealth}`);
+            }
+          }
 
           // Flash the camera red for hit feedback
           scene.cameras.main.flash(100, 255, 0, 0, 0.3);
+        } else {
+          console.log(
+            `Hit ignored: invulnerable=${invulnerable}, respawnCooldown=${respawnCooldown}`
+          );
         }
+      } else if (bulletOwnerId === socket.id) {
+        // If we hit another player, tell the server about our successful hit
+        console.log(`---> SENDING hitPlayer EVENT TO SERVER <---`);
+        console.log(`I hit player: ${hitPlayerId}`);
+
+        // Send a more detailed hit event to the server
+        socket.emit("hitPlayer", {
+          targetId: hitPlayerId,
+          timestamp: Date.now(),
+          position: { x: bullet.x, y: bullet.y },
+        });
       }
 
       // Cleanup and destroy the bullet
@@ -1248,10 +1401,8 @@ export default function Game() {
         emitter.destroy();
       }
 
-      // Remove from tracking map
-      if (bulletId) {
-        bulletOwners.delete(bulletId);
-      }
+      // Remove from tracking array
+      allBullets = allBullets.filter((b) => b.bullet !== bullet);
 
       // Destroy the bullet
       bullet.destroy();
@@ -1541,9 +1692,9 @@ export default function Game() {
       // Create the bullet at proper position
       const bullet = bullets.create(bulletPosX, bulletPosY, "bullet");
 
-      // Important: Set a unique ID for this bullet
-      const bulletId = `bullet_${Date.now()}_${Math.random()}`;
-      bullet.setName(bulletId);
+      // IMPORTANT: Explicitly set the bullet origin and size for better collision
+      bullet.setOrigin(0.5, 0.5);
+      bullet.setDisplaySize(8, 8); // Make sure bullet has a good size for collision
 
       // Ensure bullet has proper physics
       bullet.setCollideWorldBounds(false);
@@ -1555,19 +1706,22 @@ export default function Game() {
       bullet.setVelocityX(velocityX);
       bullet.setVelocityY(0); // Force horizontal movement
 
-      // Triple redundancy for bullet ownership - to fix the "no owner" warning
-      // 1. Store in our custom map
-      bulletOwners.set(bulletId, socket.id);
+      // Generate a unique ID for this bullet
+      const bulletId = `bullet_${Date.now()}_${Math.floor(
+        Math.random() * 10000
+      )}`;
 
-      // 2. Store directly on the bullet using Phaser's data manager
+      // Store the owner ID directly on the bullet object in multiple ways
       bullet.setData("owner", socket.id);
-      bullet.setData("ownerId", socket.id); // Alternative property name
+      bullet.setData("ownerId", socket.id);
+      bullet.setData("bulletId", bulletId);
 
-      // 3. Add as a custom property
-      bullet.owner = socket.id;
+      // Add to the global tracking array - this is the most reliable method
+      allBullets.push({ bullet, ownerId: socket.id });
 
+      // Debug message with the bullet's key properties
       console.log(
-        `CLIENT: Created bullet ${bulletId} with owner: ${socket.id}`
+        `CLIENT: Created bullet with ID ${bulletId}, owner: ${socket.id}, position: ${bulletPosX},${bulletPosY}`
       );
 
       // Add a trail effect
@@ -1583,9 +1737,31 @@ export default function Game() {
       // Store emitter reference for cleanup
       bullet.setData("emitter", emitter);
 
-      // Make sure bullet has collision with rocks
+      // Add explicit collision handling with rocks and players
+      // This ensures every bullet has its own collision handlers
       if (rocks) {
         scene.physics.add.overlap(bullet, rocks, bulletHitRock, null, scene);
+      }
+
+      // Add collision with other players - this is crucial
+      if (otherPlayers) {
+        otherPlayers.forEach((otherPlayer) => {
+          // Important: Add direct collider for THIS bullet with EACH other player
+          scene.physics.add.overlap(
+            bullet,
+            otherPlayer,
+            (bullet, otherPlayer) => {
+              // Direct inline collision handler
+              console.log(`Direct collision detected: Bullet hit otherPlayer`);
+              bulletHitPlayer(
+                bullet as Phaser.Physics.Arcade.Sprite,
+                otherPlayer as Phaser.Physics.Arcade.Sprite
+              );
+            },
+            null,
+            scene
+          );
+        });
       }
 
       // Destroy bullets after they've traveled too far (timeout)
@@ -1596,22 +1772,206 @@ export default function Game() {
           if (bulletEmitter && bulletEmitter.active) {
             bulletEmitter.destroy();
           }
-          // Remove from tracking
-          bulletOwners.delete(bulletId);
+
+          // Remove from tracking array
+          allBullets = allBullets.filter((b) => b.bullet !== bullet);
+
           // Destroy the bullet
           bullet.destroy();
         }
       });
 
-      // Notify server about the bullet
+      // IMPORTANT: Make sure the server knows about this bullet
       if (socket) {
         socket.emit("bulletFired", {
           bulletId: bulletId,
           x: bulletPosX,
           y: bulletPosY,
           velocityX: velocityX,
+          ownerId: socket.id, // Explicitly include owner ID
+          timestamp: Date.now(), // Add timestamp for debugging
         });
       }
+    }
+
+    function createHealthDisplay(scene: Phaser.Scene) {
+      // Remove existing health text if it exists
+      if (healthText) {
+        healthText.destroy();
+      }
+
+      // Create a more prominent health display
+      healthText = scene.add
+        .text(scene.cameras.main.width / 2, 20, `Health: ${playerHealth}`, {
+          fontSize: "24px",
+          color: "#ffffff",
+          backgroundColor: "#000000",
+          padding: { x: 8, y: 4 },
+        })
+        .setOrigin(0.5, 0)
+        .setScrollFactor(0)
+        .setDepth(1000); // Make sure it's on top
+
+      // Add a red tint if health is low
+      if (playerHealth <= 3) {
+        healthText.setTint(0xff0000);
+      }
+    }
+
+    function setupDebugListeners(scene: Phaser.Scene) {
+      if (!socket) return;
+
+      // Remove any existing listeners to avoid duplicates
+      socket.off("playerDamaged");
+
+      // Add enhanced playerDamaged event listener with more logging
+      socket.on("playerDamaged", (data: any) => {
+        if (!scene.scene.isActive()) return;
+
+        console.log(`==== SOCKET DEBUG: Received playerDamaged event ====`);
+        console.log(`Player ID: ${data.playerId}`);
+        console.log(`New Health: ${data.health}`);
+        console.log(`Shooter ID: ${data.shooterId}`);
+        console.log(`Timestamp: ${new Date().toISOString()}`);
+
+        if (data.playerId === socket.id) {
+          // This is damage to our player - trust the server's health value
+          console.log(`>>> CLIENT: I was damaged! <<<`);
+          console.log(`Health BEFORE: ${playerHealth}, AFTER: ${data.health}`);
+          console.log(
+            `Invulnerable: ${invulnerable}, RespawnCooldown: ${respawnCooldown}`
+          );
+
+          // Skip visual effects if player is invulnerable or in respawn cooldown
+          if (invulnerable) {
+            console.log("Visual effects skipped - player is invulnerable");
+            return;
+          }
+
+          if (respawnCooldown) {
+            console.log("Visual effects skipped - player in respawn cooldown");
+            return;
+          }
+
+          // IMPORTANT: Update our health to match server's value
+          const oldHealth = playerHealth;
+          playerHealth = data.health;
+          console.log(`Health updated from ${oldHealth} to ${playerHealth}`);
+
+          // Update the health display
+          if (healthText) {
+            healthText.setText(`Health: ${playerHealth}`);
+
+            // Add a red tint if health is low
+            if (playerHealth <= 3) {
+              healthText.setTint(0xff0000);
+            } else {
+              healthText.clearTint();
+            }
+          }
+
+          // Flash the camera to indicate damage
+          scene.cameras.main.flash(100, 255, 0, 0, 0.3);
+
+          // Show damage number floating up
+          if (player) {
+            const damageText = scene.add
+              .text(player.x, player.y - 20, `-${oldHealth - playerHealth}`, {
+                fontSize: "20px",
+                color: "#ff0000",
+                stroke: "#000",
+                strokeThickness: 3,
+              })
+              .setOrigin(0.5);
+
+            scene.tweens.add({
+              targets: damageText,
+              y: damageText.y - 50,
+              alpha: 0,
+              duration: 1000,
+              onComplete: () => damageText.destroy(),
+            });
+
+            // Make player flash red briefly
+            scene.tweens.add({
+              targets: player,
+              tint: 0xff0000,
+              duration: 100,
+              yoyo: true,
+              repeat: 2,
+              onComplete: () => {
+                player?.clearTint();
+              },
+            });
+          }
+
+          // Check if we died (only if our health is 0 or less)
+          if (playerHealth <= 0 && !respawnCooldown && player) {
+            console.log("CLIENT: Health reached zero - calling playerDied()");
+            playerDied(scene);
+          } else {
+            console.log(`CLIENT: Player still has ${playerHealth} health left`);
+          }
+        } else {
+          // This is damage to another player
+          console.log(
+            `Other player ${data.playerId} damaged, health: ${data.health}`
+          );
+
+          // Update other player's visual state if needed
+          const otherPlayer = otherPlayers.get(data.playerId);
+          if (otherPlayer) {
+            // Store the server-provided health
+            const oldHealth = otherPlayer.getData("health") || 10;
+            otherPlayer.setData("health", data.health);
+
+            // Update the player label to show health
+            const playerLabel = otherPlayer.getData("label");
+            if (playerLabel) {
+              const displayId = data.playerId.substring(0, 5);
+              playerLabel.setText(`${displayId} [${data.health}]`);
+            }
+
+            // Show hit effect if we caused the damage
+            if (data.shooterId === socket.id) {
+              // Show hit marker for successful hit
+              const hitMarker = scene.add
+                .text(
+                  otherPlayer.x,
+                  otherPlayer.y,
+                  `-${oldHealth - data.health}`,
+                  {
+                    fontSize: "16px",
+                    color: "#ffff00",
+                    stroke: "#000",
+                    strokeThickness: 3,
+                  }
+                )
+                .setOrigin(0.5);
+
+              scene.tweens.add({
+                targets: hitMarker,
+                y: hitMarker.y - 40,
+                alpha: 0,
+                duration: 800,
+                onComplete: () => hitMarker.destroy(),
+              });
+
+              // Make player flash red briefly
+              scene.tweens.add({
+                targets: otherPlayer,
+                tint: 0xff0000,
+                duration: 100,
+                yoyo: true,
+                repeat: 2,
+                onComplete: () => {
+                  otherPlayer.clearTint();
+                },
+              });
+            }
+          }
+        }
+      });
     }
     // Function to handle bullet-platform collision
     function bulletHitPlatform(
@@ -2359,6 +2719,12 @@ export default function Game() {
           })
           .setScrollFactor(0)
           .setName("multiplayerStatus");
+
+        // Setup the debug listeners
+        setupDebugListeners(this);
+
+        // Create enhanced health display
+        createHealthDisplay(this);
 
         // Add minimap (optional)
         const minimapWidth = 200;

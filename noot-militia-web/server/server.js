@@ -84,7 +84,7 @@ io.on("connection", (socket) => {
   });
 
   // Handle bullet hit detection
-  socket.on("bulletHit", (data) => {
+  socket.on("hitPlayer", (data) => {
     const { targetId } = data;
 
     // Validate target exists and is not already dead
