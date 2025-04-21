@@ -271,6 +271,7 @@ export default function Game() {
           const texture = Math.random() > 0.5 ? "player" : "noot";
           // Create player sprite at the specified spawn point
           player = scene.physics.add.sprite(spawnPoint.x, spawnPoint.y, "noot");
+          // .setOrigin(0.5, 0.1);
 
           // Set player properties
           player.setBounce(0.1);
@@ -325,6 +326,17 @@ export default function Game() {
         player.setVelocity(0, 0);
         player.setData("health", playerHealth);
         player.body.enable = true;
+
+        player = scene.physics.add
+          .sprite(
+            spawnPoint.x,
+            spawnPoint.y,
+            "noot" // Make sure this matches your base texture key
+          )
+          .setScale(0.7);
+
+        // Set up animations
+        player.anims.play("noot_idle");
 
         // Make player flash to indicate invulnerability
         scene.tweens.add({
@@ -1290,7 +1302,179 @@ export default function Game() {
     // Initialize the game
     game = new Phaser.Game(config);
 
-    // Preload game assets
+    function createNootTextures(scene: Phaser.Scene) {
+      // Increased texture height to 80 pixels to fit the raised character
+      const width = 64;
+      const height = 115;
+      const centerX = width / 2;
+      const centerY = height / 2.5; // Adjusted for raised position
+
+      // Create the base NOOT parts once - we'll recreate these for each frame
+      function drawBaseNoot(graphics: Phaser.GameObjects.Graphics) {
+        // DARK BODY
+        graphics.fillStyle(0x222222, 1);
+        graphics.beginPath();
+        // Move the body up by 24 pixels total (16 + 8 more)
+        graphics.arc(centerX - 5, centerY - 24, 18, 0, Math.PI * 1); // Body moved up more
+        graphics.arc(centerX + 10, centerY - 36, 10, 0, Math.PI * 2); // Head moved up more
+        graphics.fill();
+
+        // ORANGE BEAK - adjusted for new head position
+        graphics.fillStyle(0xff9900, 1);
+        graphics.beginPath();
+        graphics.moveTo(centerX + 18, centerY - 34); // Moved up more
+        graphics.lineTo(centerX + 30, centerY - 32); // Moved up more
+        graphics.lineTo(centerX + 18, centerY - 26); // Moved up more
+        graphics.closePath();
+        graphics.fill();
+
+        // SINGLE EYE - adjusted for new head position
+        graphics.fillStyle(0x000000, 1);
+        graphics.beginPath();
+        graphics.arc(centerX + 8, centerY - 36, 5, 0, Math.PI * 2); // Moved up more
+        graphics.fill();
+
+        // EYE HIGHLIGHT - adjusted for new head position
+        graphics.fillStyle(0xffffff, 1);
+        graphics.beginPath();
+        graphics.arc(centerX + 6, centerY - 37, 2, 0, Math.PI * 2); // Moved up more
+        graphics.fill();
+      }
+
+      // Create base/idle texture
+      const idleGraphics = scene.make.graphics({ x: 0, y: 0, add: false });
+
+      // Draw base parts
+      drawBaseNoot(idleGraphics);
+
+      // Draw static legs and feet - moved up by 24 pixels total from original
+      idleGraphics.fillStyle(0xff9900, 1);
+      idleGraphics.fillRect(centerX - 8, centerY - 9, 6, 10); // Left leg moved up more
+      idleGraphics.fillRect(centerX + 2, centerY - 9, 6, 10); // Right leg moved up more
+      idleGraphics.fillRect(centerX - 10, centerY + 1, 10, 5); // Left foot moved up more
+      idleGraphics.fillRect(centerX, centerY + 1, 10, 5); // Right foot moved up more
+
+      // Draw static wing - moved up to match body
+      idleGraphics.fillStyle(0x444444, 1);
+      idleGraphics.beginPath();
+      idleGraphics.arc(centerX - 5, centerY - 19, 12, -0.5, 0.5); // Moved up more
+      idleGraphics.lineTo(centerX - 5, centerY - 19); // Moved up more
+      idleGraphics.closePath();
+      idleGraphics.fill();
+
+      // Generate idle texture
+      idleGraphics.generateTexture("noot_idle", width, height);
+      idleGraphics.destroy();
+
+      // Create walking animation frames - adjusted all positions
+      for (let i = 0; i < 4; i++) {
+        const walkFrame = scene.make.graphics({ x: 0, y: 0, add: false });
+
+        // Draw base parts (same for all frames)
+        drawBaseNoot(walkFrame);
+
+        // Draw animated legs with bobbing motion - moved up more
+        walkFrame.fillStyle(0xff9900, 1);
+        walkFrame.fillRect(
+          centerX - 8,
+          centerY - 9 + Math.sin((i * Math.PI) / 2) * 5,
+          6,
+          10
+        ); // Left leg moved up more
+
+        walkFrame.fillRect(
+          centerX + 2,
+          centerY - 9 - Math.sin((i * Math.PI) / 2) * 5,
+          6,
+          10
+        ); // Right leg moved up more
+
+        // Draw animated feet - moved up more
+        walkFrame.fillRect(
+          centerX - 10,
+          centerY + 1 + Math.sin((i * Math.PI) / 2) * 5,
+          10,
+          5
+        ); // Left foot moved up more
+
+        walkFrame.fillRect(
+          centerX,
+          centerY + 1 - Math.sin((i * Math.PI) / 2) * 5,
+          10,
+          5
+        ); // Right foot moved up more
+
+        // Draw wing with slight movement - adjusted for new body position
+        walkFrame.fillStyle(0x444444, 1);
+        const wingAngle = -0.5 + Math.sin((i * Math.PI) / 2) * 0.1;
+        walkFrame.beginPath();
+        walkFrame.arc(centerX - 5, centerY - 19, 12, wingAngle, 0.5); // Moved up more
+        walkFrame.lineTo(centerX - 5, centerY - 19); // Moved up more
+        walkFrame.closePath();
+        walkFrame.fill();
+
+        // Generate walk frame texture
+        walkFrame.generateTexture(`noot_walk_${i}`, width, height);
+        walkFrame.destroy();
+      }
+
+      // Create jump frame - adjust positions
+      const jumpFrame = scene.make.graphics({ x: 0, y: 0, add: false });
+
+      // For jump frame, we need to adjust the head position
+      // DARK BODY
+      jumpFrame.fillStyle(0x222222, 1);
+      jumpFrame.beginPath();
+      jumpFrame.arc(centerX - 5, centerY - 24, 18, 0, Math.PI * 1); // Body moved up more
+      jumpFrame.arc(centerX + 10, centerY - 41, 10, 0, Math.PI * 2); // Head moved up more
+      jumpFrame.fill();
+
+      // ORANGE BEAK - adjusted for head position
+      jumpFrame.fillStyle(0xff9900, 1);
+      jumpFrame.beginPath();
+      jumpFrame.moveTo(centerX + 18, centerY - 39); // Moved up more
+      jumpFrame.lineTo(centerX + 30, centerY - 37); // Moved up more
+      jumpFrame.lineTo(centerX + 18, centerY - 31); // Moved up more
+      jumpFrame.closePath();
+      jumpFrame.fill();
+
+      // EYE - adjusted for head position
+      jumpFrame.fillStyle(0x000000, 1);
+      jumpFrame.beginPath();
+      jumpFrame.arc(centerX + 8, centerY - 41, 5, 0, Math.PI * 2); // Moved up more
+      jumpFrame.fill();
+
+      // EYE HIGHLIGHT - adjusted for head position
+      jumpFrame.fillStyle(0xffffff, 1);
+      jumpFrame.beginPath();
+      jumpFrame.arc(centerX + 6, centerY - 42, 2, 0, Math.PI * 2); // Moved up more
+      jumpFrame.fill();
+
+      // WINGS SPREAD FOR JUMPING
+      jumpFrame.fillStyle(0x444444, 1);
+      jumpFrame.fillRect(centerX - 23, centerY - 24, 18, 5); // Left wing moved up more
+      jumpFrame.fillRect(centerX + 5, centerY - 24, 18, 5); // Right wing moved up more
+
+      // LEGS EXTENDED FOR JUMPING
+      jumpFrame.fillStyle(0xff9900, 1);
+      jumpFrame.fillRect(centerX - 8, centerY - 9, 6, 15); // Left leg moved up more
+      jumpFrame.fillRect(centerX + 2, centerY - 9, 6, 15); // Right leg moved up more
+      jumpFrame.fillRect(centerX - 10, centerY + 6, 10, 5); // Left foot moved up more
+      jumpFrame.fillRect(centerX, centerY + 6, 10, 5); // Right foot moved up more
+
+      // Generate jump texture
+      jumpFrame.generateTexture("noot_jump", width, height);
+      jumpFrame.destroy();
+
+      // Also create a simple base texture for possible other uses
+      const baseFrame = scene.make.graphics({ x: 0, y: 0, add: false });
+      drawBaseNoot(baseFrame);
+      baseFrame.generateTexture("noot_base", width, height);
+      baseFrame.destroy();
+
+      return { centerX, centerY, width, height };
+    }
+    //Preload game assets
     function preload(this: Phaser.Scene) {
       // this.load.audio("nootSound", [
       //   {
@@ -1373,59 +1557,7 @@ export default function Game() {
         nootGraphics.clear();
 
         // Size parameters (64x64 texture)
-        const size = 64;
-        const centerX = size / 2;
-        const centerY = size / 2;
-
-        // DARK BODY (using arcs instead of ellipse)
-        nootGraphics.fillStyle(0x222222, 1);
-        nootGraphics.beginPath();
-        // Main body (approximating ellipse with arcs)
-        nootGraphics.arc(centerX - 5, centerY, 18, 0, Math.PI * 1);
-        // Neck curve
-        nootGraphics.arc(centerX + 10, centerY - 12, 10, 0, Math.PI * 2);
-        nootGraphics.fill();
-
-        // ORANGE BEAK (triangle works fine)
-        nootGraphics.fillStyle(0xff9900, 1);
-        nootGraphics.beginPath();
-        nootGraphics.moveTo(centerX + 18, centerY - 10);
-        nootGraphics.lineTo(centerX + 30, centerY - 8);
-        nootGraphics.lineTo(centerX + 18, centerY - 2);
-        nootGraphics.closePath();
-        nootGraphics.fill();
-
-        // SINGLE EYE (using circle)
-        nootGraphics.fillStyle(0x000000, 1);
-        nootGraphics.beginPath();
-        nootGraphics.arc(centerX + 8, centerY - 12, 5, 0, Math.PI * 2);
-        nootGraphics.fill();
-
-        // EYE HIGHLIGHT
-        nootGraphics.fillStyle(0xffffff, 1);
-        nootGraphics.beginPath();
-        nootGraphics.arc(centerX + 6, centerY - 13, 2, 0, Math.PI * 2);
-        nootGraphics.fill();
-
-        // LEGS (using rectangles)
-        nootGraphics.fillStyle(0xff9900, 1);
-        // Upper legs
-        nootGraphics.fillRect(centerX - 8, centerY + 15, 6, 10);
-        nootGraphics.fillRect(centerX + 2, centerY + 15, 6, 10);
-        // Feet
-        nootGraphics.fillRect(centerX - 10, centerY + 25, 10, 5);
-        nootGraphics.fillRect(centerX, centerY + 25, 10, 5);
-
-        // WING (using arc and line)
-        nootGraphics.fillStyle(0x444444, 1);
-        nootGraphics.beginPath();
-        nootGraphics.arc(centerX - 5, centerY + 5, 12, -0.5, 0.5);
-        nootGraphics.lineTo(centerX - 5, centerY + 5);
-        nootGraphics.closePath();
-        nootGraphics.fill();
-
-        // Generate texture
-        nootGraphics.generateTexture("noot", size, size);
+        createNootTextures(this);
         // Create a bullet graphic
         const bulletGraphics = this.make.graphics({ x: 0, y: 0, add: false });
 
@@ -1510,6 +1642,30 @@ export default function Game() {
 
         // Spawn the player at a random spawn point
         spawnPlayer(this, Math.floor(Math.random() * SPAWN_POINTS.length));
+
+        this.anims.create({
+          key: "noot_walk",
+          frames: [
+            { key: "noot_walk_0" },
+            { key: "noot_walk_1" },
+            { key: "noot_walk_2" },
+            { key: "noot_walk_3" },
+          ],
+          frameRate: 8,
+          repeat: -1,
+        });
+
+        this.anims.create({
+          key: "noot_jump",
+          frames: [{ key: "noot_jump" }],
+          frameRate: 10,
+        });
+
+        this.anims.create({
+          key: "noot_idle",
+          frames: [{ key: "noot_idle" }], // Using the dedicated idle frame instead of base
+          frameRate: 10,
+        });
 
         // Add collision between bullets and platforms
         this.physics.add.collider(
@@ -1915,6 +2071,30 @@ export default function Game() {
         // Track if player has moved
         let hasMovement = false;
 
+        // Handle animation states first
+        if (!player.body.touching.down) {
+          // Jumping/Flying animation
+          player.anims.play("noot_jump", true);
+        } else if (
+          cursors.left?.isDown ||
+          cursors.right?.isDown ||
+          this.input.keyboard.checkDown(
+            this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+            150
+          ) ||
+          this.input.keyboard.checkDown(
+            this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
+            150
+          )
+        ) {
+          // Walking animation when moving on ground
+          player.anims.play("noot_walk", true);
+          hasMovement = true;
+        } else {
+          // Idle animation when standing still
+          player.anims.play("noot_idle", true);
+        }
+
         // Handle movement logic
         if (
           cursors.left?.isDown ||
@@ -1949,9 +2129,11 @@ export default function Game() {
             )) &&
           player.body.touching.down
         ) {
-          const jumpPower = player.texture.key === "noot" ? -400 : -330;
+          const jumpPower = player.texture.key === "noot" ? -600 : -430;
           player.setVelocityY(jumpPower);
           hasMovement = true;
+          // Play jump sound if you have one
+          // this.sound.play('jump_sound');
         }
 
         // Handle shooting
@@ -1977,24 +2159,24 @@ export default function Game() {
             x: player.x,
             y: player.y,
             flipX: player.flipX,
-            health: playerHealth, // Send current health with movement
+            health: playerHealth,
+            animation: player.anims.currentAnim?.key, // Send current animation state
           });
         }
 
+        // Rest of your existing update code...
         if (Phaser.Input.Keyboard.JustDown(leaderboardKey)) {
           showLeaderboard = !showLeaderboard;
           if (leaderboardText) {
             leaderboardText.setVisible(showLeaderboard);
 
             if (showLeaderboard) {
-              // Update leaderboard content when shown
               updateLeaderboard(this);
             }
           }
         }
 
-        // BACKUP COLLISION DETECTION: Manually check for bullet collisions with player
-        // This is a fallback in case the physics overlap doesn't trigger correctly
+        // BACKUP COLLISION DETECTION
         if (player && !respawnCooldown && !invulnerable) {
           const playerBounds = player.getBounds();
 
@@ -2003,25 +2185,21 @@ export default function Game() {
             const bulletOwner =
               bulletOwners.get(bullet) || bullet.getData("owner");
 
-            // Skip bullets fired by this player
             if (bulletOwner === socket?.id) return;
 
             const bulletBounds = bullet.getBounds();
 
-            // Manual collision detection
             if (Phaser.Geom.Rectangle.Overlaps(playerBounds, bulletBounds)) {
               console.log(
                 "MANUAL COLLISION DETECTED between bullet and player!"
               );
 
-              // Emit hit to server
               if (socket) {
                 socket.emit("bulletHitMe", {
                   shooterId: bulletOwner,
                 });
               }
 
-              // Create hit effect
               const hitEffect = this.add.circle(
                 bullet.x,
                 bullet.y,
@@ -2037,7 +2215,6 @@ export default function Game() {
                 onComplete: () => hitEffect.destroy(),
               });
 
-              // Clean up the bullet
               const emitter = bullet.getData("emitter");
               if (emitter) emitter.destroy();
               bulletOwners.delete(bullet);
@@ -2055,16 +2232,11 @@ export default function Game() {
             bullet.y < -50 ||
             bullet.y > this.physics.world.bounds.height + 50
           ) {
-            // Clean up particle emitter if it exists
             const emitter = bullet.getData("emitter");
             if (emitter) {
               emitter.destroy();
             }
-
-            // Remove from our custom bullet tracking
             bulletOwners.delete(bullet);
-
-            // Destroy the bullet
             bullet.destroy();
           }
         });
@@ -2093,7 +2265,7 @@ export default function Game() {
           }
         });
 
-        // Update health display to ensure it's showing the latest value
+        // Update health display
         if (healthText) {
           healthText.setText(`Health: ${playerHealth}`);
         }
