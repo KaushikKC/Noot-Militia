@@ -233,7 +233,7 @@ contract NootRewardsEscrow is Ownable {
         
         // Return half of the stake to each player
         require(nootToken.transfer(reward.player1, halfAmount), "Player 1 token return failed");
-        require(nootToken.transfer(reward.player2, halfAmount), "Player 2 token return failed");
+        require(nootToken.transfer(reward.player2, halfAmount), "Player 2 token return failedd");
     }
     
     /**
