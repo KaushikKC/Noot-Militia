@@ -6,6 +6,7 @@ import Image from "next/image";
 import dynamic from "next/dynamic";
 import { useLogin, usePrivy, useLogout } from "@privy-io/react-auth";
 import { useAccount, useBalance } from "wagmi";
+import { useRouter } from "next/navigation";
 
 // Dynamically import the Game component with SSR disabled
 const Game = dynamic(() => import("@/components/Game"), {
@@ -17,6 +18,9 @@ export default function Home() {
   const [bullets, setBullets] = useState([]);
   const [particles, setParticles] = useState([]);
   const [showGame, setShowGame] = useState(false);
+  const [isCreatingWallet, setIsCreatingWallet] = useState(false);
+  const [smartWalletCreated, setSmartWalletCreated] = useState(false);
+  const router = useRouter();
 
   // Wallet connection states
   const { ready, authenticated, user: privyUser } = usePrivy();
@@ -26,6 +30,35 @@ export default function Home() {
   const { data: balance } = useBalance({
     address: address,
   });
+
+  const handleCreateSmartWallet = async () => {
+    try {
+      setIsCreatingWallet(true);
+
+      // Simulating wallet creation with a timeout
+      // Replace this with your actual smart wallet creation logic
+      setTimeout(() => {
+        setSmartWalletCreated(true);
+        setIsCreatingWallet(false);
+
+        // Create explosion effect when wallet is created
+        const centerX = window.innerWidth / 2;
+        const centerY = window.innerHeight / 2;
+        createExplosion(centerX, centerY);
+
+        // Create circular burst of bullets
+        for (let i = 0; i < 8; i++) {
+          const angle = (Math.PI * 2 * i) / 8;
+          setTimeout(() => {
+            createBullet(centerX, centerY, angle);
+          }, i * 50);
+        }
+      }, 2000);
+    } catch (error) {
+      console.error("Error creating smart wallet:", error);
+      setIsCreatingWallet(false);
+    }
+  };
 
   // Create bullet effect
   const createBullet = (startX, startY, angle) => {
@@ -165,9 +198,9 @@ export default function Home() {
       }, i * 50);
     }
 
-    // Show game after a short delay to allow animations to play
+    // Navigate to the matching page after a short delay to allow animations to play
     setTimeout(() => {
-      setShowGame(true);
+      router.push("/matching");
     }, 600);
   };
 
@@ -239,6 +272,87 @@ export default function Home() {
                 </span>
               )}
             </motion.div>
+            {authenticated && !smartWalletCreated && (
+              <motion.div
+                className="absolute top-20 right-6 z-50"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.3, duration: 0.5 }}
+              >
+                <motion.button
+                  className={`px-4 py-2 rounded-lg ${
+                    isCreatingWallet ? "bg-gray-600" : "bg-blue-600"
+                  } text-white flex items-center justify-center w-48`}
+                  onClick={handleCreateSmartWallet}
+                  whileHover={
+                    !isCreatingWallet
+                      ? {
+                          scale: 1.05,
+                          boxShadow: "0 0 10px rgba(59, 130, 246, 0.7)",
+                        }
+                      : {}
+                  }
+                  whileTap={!isCreatingWallet ? { scale: 0.95 } : {}}
+                  disabled={isCreatingWallet}
+                >
+                  {isCreatingWallet ? (
+                    <>
+                      <motion.div
+                        className="w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"
+                        animate={{ rotate: 360 }}
+                        transition={{
+                          duration: 1,
+                          repeat: Infinity,
+                          ease: "linear",
+                        }}
+                      />
+                      Creating Wallet...
+                    </>
+                  ) : (
+                    <>
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="mr-2"
+                      >
+                        <path
+                          d="M19 7h-3V5a3 3 0 00-3-3h-2a3 3 0 00-3 3v2H5a3 3 0 00-3 3v9a3 3 0 003 3h14a3 3 0 003-3v-9a3 3 0 00-3-3zm-9-2a1 1 0 011-1h2a1 1 0 011 1v2h-4V5zm10 14a1 1 0 01-1 1H5a1 1 0 01-1-1v-5h16v5zm0-7H4v-2a1 1 0 011-1h14a1 1 0 011 1v2z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                      Create Smart Wallet
+                    </>
+                  )}
+                </motion.button>
+              </motion.div>
+            )}
+
+            {authenticated && smartWalletCreated && (
+              <motion.div
+                className="absolute top-20 right-6 z-50"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5 }}
+              >
+                <div className="px-4 py-2 rounded-lg bg-green-700 text-white flex items-center">
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    className="mr-2"
+                  >
+                    <path
+                      d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                  Smart Wallet Ready
+                </div>
+              </motion.div>
+            )}
             <motion.button
               className="px-3 py-1 rounded-lg bg-red-700 text-white text-sm"
               onClick={handleDisconnectWallet}

@@ -16,6 +16,202 @@ const io = socketIO(server, {
 // Serve static files from the public directory
 app.use(express.static(path.join(__dirname, "../public")));
 
+// ===============================================
+// PLAYER MATCHING SYSTEM
+// ===============================================
+
+// Matching system state
+const lobbies = new Map(); // Map of lobby IDs to lobby objects
+const playerLobbyMap = new Map(); // Map of player IDs to lobby IDs
+let nextLobbyId = 1;
+
+// Create a new lobby object
+function createLobby() {
+  const lobbyId = `lobby_${nextLobbyId++}`;
+  const lobby = {
+    id: lobbyId,
+    players: new Map(), // Map of player IDs to player objects
+    state: "waiting", // waiting, starting, or active
+    countdown: null, // Countdown timer reference
+  };
+
+  lobbies.set(lobbyId, lobby);
+  console.log(`Created new lobby: ${lobbyId}`);
+  return lobby;
+}
+
+// Add player to a lobby (creates a new lobby if none exists with space)
+function addPlayerToLobby(socket, playerAddress) {
+  // Check if player is already in a lobby
+  if (playerLobbyMap.has(socket.id)) {
+    return playerLobbyMap.get(socket.id);
+  }
+
+  // Find a lobby with space or create a new one
+  let lobby = null;
+
+  // Try to find a waiting lobby first
+  for (const [lobbyId, existingLobby] of lobbies.entries()) {
+    if (existingLobby.state === "waiting" && existingLobby.players.size < 4) {
+      lobby = existingLobby;
+      break;
+    }
+  }
+
+  // If no waiting lobby found, create a new one
+  if (!lobby) {
+    lobby = createLobby();
+  }
+
+  // Add player to the lobby
+  const player = {
+    id: socket.id,
+    address: playerAddress,
+    ready: false,
+    socket: socket,
+    joinedAt: Date.now(),
+  };
+
+  lobby.players.set(socket.id, player);
+  playerLobbyMap.set(socket.id, lobby.id);
+
+  console.log(
+    `Added player ${socket.id} (${playerAddress}) to lobby ${lobby.id}`
+  );
+
+  // Notify all players in the lobby about the updated player list
+  broadcastLobbyUpdate(lobby);
+
+  return lobby;
+}
+
+// Remove player from their lobby
+function removePlayerFromLobby(socketId) {
+  const lobbyId = playerLobbyMap.get(socketId);
+  if (!lobbyId) return;
+
+  const lobby = lobbies.get(lobbyId);
+  if (!lobby) return;
+
+  // Remove player from lobby
+  lobby.players.delete(socketId);
+  playerLobbyMap.delete(socketId);
+  console.log(`Removed player ${socketId} from lobby ${lobbyId}`);
+
+  // If lobby is empty, delete it
+  if (lobby.players.size === 0) {
+    // Clear any existing countdown
+    if (lobby.countdown) {
+      clearTimeout(lobby.countdown);
+    }
+
+    lobbies.delete(lobbyId);
+    console.log(`Deleted empty lobby ${lobbyId}`);
+    return;
+  }
+
+  // Otherwise, broadcast updated player list
+  broadcastLobbyUpdate(lobby);
+}
+
+// Broadcast lobby status to all players in the lobby
+function broadcastLobbyUpdate(lobby) {
+  const playerData = Array.from(lobby.players.values()).map((player) => ({
+    id: player.id,
+    address: player.address,
+    ready: player.ready,
+  }));
+
+  // Send update to all players
+  lobby.players.forEach((player) => {
+    player.socket.emit("lobby-update", {
+      lobbyId: lobby.id,
+      players: playerData,
+      state: lobby.state,
+    });
+  });
+}
+
+// Start a lobby countdown when all players are ready
+function startLobbyCountdown(lobby) {
+  if (lobby.state !== "waiting") return;
+
+  // Check if all players are ready
+  const allReady = Array.from(lobby.players.values()).every(
+    (player) => player.ready
+  );
+  if (!allReady || lobby.players.size < 2) return;
+
+  // Start countdown
+  lobby.state = "starting";
+  let countdown = 5; // 5 seconds countdown
+
+  // Clear any existing countdown
+  if (lobby.countdown) {
+    clearTimeout(lobby.countdown);
+  }
+
+  // Notify players that countdown has started
+  lobby.players.forEach((player) => {
+    player.socket.emit("game-countdown", {
+      countdown: countdown,
+    });
+  });
+
+  const tick = () => {
+    countdown--;
+
+    // Send countdown update
+    lobby.players.forEach((player) => {
+      player.socket.emit("game-countdown", {
+        countdown: countdown,
+      });
+    });
+
+    if (countdown <= 0) {
+      // Start the game
+      startGame(lobby);
+    } else {
+      // Continue countdown
+      lobby.countdown = setTimeout(tick, 1000);
+    }
+  };
+
+  // Start the countdown
+  lobby.countdown = setTimeout(tick, 1000);
+}
+
+// Start the game for a lobby
+function startGame(lobby) {
+  lobby.state = "active";
+
+  // Prepare player data for game initialization
+  const gameData = {
+    players: Array.from(lobby.players.values()).map((player, index) => ({
+      id: player.id,
+      address: player.address,
+      spawnPointIndex: index % 2, // Alternate spawn points
+    })),
+  };
+
+  // Signal all players to start the game
+  lobby.players.forEach((player) => {
+    player.socket.emit("game-start", gameData);
+  });
+
+  // After a short delay, move all players to the game namespace
+  setTimeout(() => {
+    lobby.players.forEach((player) => {
+      // This will be handled client-side by navigating to the game page
+      player.socket.emit("navigate-to-game");
+    });
+  }, 1000);
+}
+
+// ===============================================
+// GAME MECHANICS (Your existing game logic)
+// ===============================================
+
 // Game state
 const players = {};
 const SPAWN_POINTS = [
@@ -26,6 +222,97 @@ const SPAWN_POINTS = [
 // Handle socket connections
 io.on("connection", (socket) => {
   console.log("Player connected:", socket.id);
+
+  // ===============================================
+  // MATCHING SYSTEM SOCKET HANDLERS
+  // ===============================================
+
+  // Handle player joining the matching system
+  socket.on("join-matching", (data) => {
+    console.log(
+      `Player ${socket.id} joining matching with address ${data.address}`
+    );
+
+    // Add player to a lobby
+    const lobby = addPlayerToLobby(socket, data.address);
+
+    // Send initial lobby state to the player
+    const playerData = Array.from(lobby.players.values()).map((player) => ({
+      id: player.id,
+      address: player.address,
+      ready: player.ready,
+    }));
+
+    socket.emit("matching-joined", {
+      success: true,
+      lobbyId: lobby.id,
+      players: playerData,
+      state: lobby.state,
+    });
+  });
+
+  // Handle player ready status
+  socket.on("player-ready", (data) => {
+    const lobbyId = playerLobbyMap.get(socket.id);
+    if (!lobbyId) return;
+
+    const lobby = lobbies.get(lobbyId);
+    if (!lobby || lobby.state !== "waiting") return;
+
+    const player = lobby.players.get(socket.id);
+    if (!player) return;
+
+    // Update player ready status
+    player.ready = data.ready;
+    console.log(`Player ${socket.id} ready status: ${player.ready}`);
+
+    // Broadcast updated player list
+    broadcastLobbyUpdate(lobby);
+
+    // Check if all players are ready to start the countdown
+    if (data.ready) {
+      startLobbyCountdown(lobby);
+    } else {
+      // If a player is no longer ready, cancel the countdown
+      if (lobby.countdown) {
+        clearTimeout(lobby.countdown);
+        lobby.countdown = null;
+        lobby.state = "waiting";
+
+        // Notify players that countdown has been cancelled
+        lobby.players.forEach((p) => {
+          p.socket.emit("countdown-cancelled");
+        });
+      }
+    }
+  });
+
+  // Handle player requesting to start the game
+  socket.on("start-game", () => {
+    const lobbyId = playerLobbyMap.get(socket.id);
+    if (!lobbyId) return;
+
+    const lobby = lobbies.get(lobbyId);
+    if (!lobby || lobby.state !== "waiting") return;
+
+    // Check if all players are ready
+    const allReady = Array.from(lobby.players.values()).every(
+      (player) => player.ready
+    );
+    if (!allReady || lobby.players.size < 2) return;
+
+    // Start the countdown
+    startLobbyCountdown(lobby);
+  });
+
+  // Handle player leaving the matching system
+  socket.on("leave-matching", () => {
+    removePlayerFromLobby(socket.id);
+  });
+
+  // ===============================================
+  // GAME MECHANICS SOCKET HANDLERS (Your existing code)
+  // ===============================================
 
   // Assign a spawn point (alternating between the two)
   const spawnPointIndex = Object.keys(players).length % 2;
@@ -123,10 +410,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Add this inside your socket.on('connection') handler, with the other event handlers
-
   // Handle player being hit by a bullet
-
   socket.on("bulletHitMe", (data) => {
     console.log("SERVER: bulletHitMe event data:", data);
     // Use a fallback ID if shooterId is undefined
@@ -220,6 +504,9 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     console.log("Player disconnected:", socket.id);
 
+    // Remove from matching system if they're in a lobby
+    removePlayerFromLobby(socket.id);
+
     // Remove the player from the game
     delete players[socket.id];
 
@@ -297,4 +584,7 @@ function handlePlayerDeath(playerId, killerId) {
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(
+    `Matching system and game server active at http://localhost:${PORT}`
+  );
 });

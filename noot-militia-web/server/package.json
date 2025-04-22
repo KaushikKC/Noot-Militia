@@ -5,11 +5,16 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "match-server": "node server/matchingServer.js",
+    "dev-with-matching": "node server/startServer.js"
   },
   "dependencies": {
+    "child_process": "^1.0.2",
     "express": "^4.18.2",
-    "socket.io": "^4.7.2"
+    "http": "^0.0.1-security",
+    "socket.io": "^4.7.2",
+    "ws": "^8.18.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

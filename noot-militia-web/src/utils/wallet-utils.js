@@ -16,10 +16,10 @@ export const connectors = connectorsForWallets(
       groupName: "Recommended",
       wallets: [rainbowWallet, metaMaskWallet],
     },
-    {
-      groupName: "Other",
-      wallets: [walletConnectWallet, injectedWallet],
-    },
+    // {
+    //   groupName: "Other",
+    //   wallets: [walletConnectWallet, injectedWallet],
+    // },
   ],
   {
     appName: "Scaffold",

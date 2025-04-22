@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Phaser from "phaser";
+import * as PhaserNamespace from "phaser";
+const Phaser = PhaserNamespace;
 import io from "socket.io-client";
+import { useRouter } from "next/navigation";
+import { usePrivy } from "@privy-io/react-auth";
 
 function safeGetData(object: any, key: string, defaultValue: any = null) {
   if (!object || !object.getData) return defaultValue;
@@ -15,9 +18,37 @@ function safeGetData(object: any, key: string, defaultValue: any = null) {
   }
 }
 
-export default function Game() {
+export default function Game({ gameData }: { gameData: any }) {
   const gameRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const router = useRouter();
+  const { authenticated } = usePrivy();
+
+  // Check if user is authenticated, if not redirect to home
+  useEffect(() => {
+    if (!authenticated) {
+      router.push("/");
+    }
+
+    // Listen for ESC key to return to the matching page
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        router.push("/matching");
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [authenticated, router]);
+
+  useEffect(() => {
+    if (gameData && gameData.players) {
+      console.log("Game initialized with player data:", gameData);
+      // Initialize game with the player data
+      // ...
+    }
+  }, [gameData]);
 
   useEffect(() => {
     if (!gameRef.current) return;
