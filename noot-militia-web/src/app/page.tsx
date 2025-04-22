@@ -4,10 +4,12 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import dynamic from "next/dynamic";
+import { useLogin, usePrivy, useLogout } from "@privy-io/react-auth";
+import { useAccount, useBalance } from "wagmi";
 
 // Dynamically import the Game component with SSR disabled
 const Game = dynamic(() => import("@/components/Game"), {
-  ssr: false
+  ssr: false,
 });
 
 export default function Home() {
@@ -15,6 +17,15 @@ export default function Home() {
   const [bullets, setBullets] = useState([]);
   const [particles, setParticles] = useState([]);
   const [showGame, setShowGame] = useState(false);
+
+  // Wallet connection states
+  const { ready, authenticated, user: privyUser } = usePrivy();
+  const { login } = useLogin();
+  const { logout } = useLogout();
+  const { address } = useAccount();
+  const { data: balance } = useBalance({
+    address: address,
+  });
 
   // Create bullet effect
   const createBullet = (startX, startY, angle) => {
@@ -28,10 +39,10 @@ export default function Home() {
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
       life: lifespan,
-      size: 3 + Math.random() * 2
+      size: 3 + Math.random() * 2,
     };
 
-    setBullets(prev => [...prev, newBullet]);
+    setBullets((prev) => [...prev, newBullet]);
   };
 
   // Create explosion particles
@@ -52,102 +63,93 @@ export default function Home() {
           "#16a34a",
           "#15803d",
           "#ffb700",
-          "#ff9500"
-        ][Math.floor(Math.random() * 6)]
+          "#ff9500",
+        ][Math.floor(Math.random() * 6)],
       });
     }
     setParticles([...particles, ...newParticles]);
   };
 
   // Random shooting effect
-  useEffect(
-    () => {
-      if (showGame) return; // Don't create random bullets if game is shown
+  useEffect(() => {
+    if (showGame) return; // Don't create random bullets if game is shown
 
-      const interval = setInterval(() => {
-        // Create random bullets from sides toward center
-        const side = Math.floor(Math.random() * 4); // 0: top, 1: right, 2: bottom, 3: left
-        let startX, startY, angle;
+    const interval = setInterval(() => {
+      // Create random bullets from sides toward center
+      const side = Math.floor(Math.random() * 4); // 0: top, 1: right, 2: bottom, 3: left
+      let startX, startY, angle;
 
-        switch (side) {
-          case 0: // top
-            startX = Math.random() * window.innerWidth;
-            startY = -10;
-            angle = Math.PI / 2 + (Math.random() - 0.5) * 0.5;
-            break;
-          case 1: // right
-            startX = window.innerWidth + 10;
-            startY = Math.random() * window.innerHeight * 0.7;
-            angle = Math.PI + (Math.random() - 0.5) * 0.5;
-            break;
-          case 2: // left
-            startX = -10;
-            startY = Math.random() * window.innerHeight * 0.7;
-            angle = 0 + (Math.random() - 0.5) * 0.5;
-            break;
-          default:
-            // random position on top half
-            startX = 50 + Math.random() * (window.innerWidth - 100);
-            startY = 50 + Math.random() * (window.innerHeight * 0.4);
-            angle = Math.random() * Math.PI * 2;
-        }
+      switch (side) {
+        case 0: // top
+          startX = Math.random() * window.innerWidth;
+          startY = -10;
+          angle = Math.PI / 2 + (Math.random() - 0.5) * 0.5;
+          break;
+        case 1: // right
+          startX = window.innerWidth + 10;
+          startY = Math.random() * window.innerHeight * 0.7;
+          angle = Math.PI + (Math.random() - 0.5) * 0.5;
+          break;
+        case 2: // left
+          startX = -10;
+          startY = Math.random() * window.innerHeight * 0.7;
+          angle = 0 + (Math.random() - 0.5) * 0.5;
+          break;
+        default:
+          // random position on top half
+          startX = 50 + Math.random() * (window.innerWidth - 100);
+          startY = 50 + Math.random() * (window.innerHeight * 0.4);
+          angle = Math.random() * Math.PI * 2;
+      }
 
-        createBullet(startX, startY, angle);
-      }, 300);
+      createBullet(startX, startY, angle);
+    }, 300);
 
-      return () => clearInterval(interval);
-    },
-    [showGame]
-  );
+    return () => clearInterval(interval);
+  }, [showGame]);
 
   // Update bullets animation
-  useEffect(
-    () => {
-      if (bullets.length === 0) return;
+  useEffect(() => {
+    if (bullets.length === 0) return;
 
-      const timer = setTimeout(() => {
-        setBullets(
-          bullets
-            .map(b => ({
-              ...b,
-              x: b.x + b.vx,
-              y: b.y + b.vy,
-              life: b.life - 1
-            }))
-            .filter(b => b.life > 0)
-        );
-      }, 30);
+    const timer = setTimeout(() => {
+      setBullets(
+        bullets
+          .map((b) => ({
+            ...b,
+            x: b.x + b.vx,
+            y: b.y + b.vy,
+            life: b.life - 1,
+          }))
+          .filter((b) => b.life > 0)
+      );
+    }, 30);
 
-      return () => clearTimeout(timer);
-    },
-    [bullets]
-  );
+    return () => clearTimeout(timer);
+  }, [bullets]);
 
   // Update particles animation
-  useEffect(
-    () => {
-      if (particles.length === 0) return;
+  useEffect(() => {
+    if (particles.length === 0) return;
 
-      const timer = setTimeout(() => {
-        setParticles(
-          particles
-            .map(p => ({
-              ...p,
-              x: p.x + p.vx,
-              y: p.y + p.vy,
-              life: p.life - 1
-            }))
-            .filter(p => p.life > 0)
-        );
-      }, 30);
+    const timer = setTimeout(() => {
+      setParticles(
+        particles
+          .map((p) => ({
+            ...p,
+            x: p.x + p.vx,
+            y: p.y + p.vy,
+            life: p.life - 1,
+          }))
+          .filter((p) => p.life > 0)
+      );
+    }, 30);
 
-      return () => clearTimeout(timer);
-    },
-    [particles]
-  );
+    return () => clearTimeout(timer);
+  }, [particles]);
 
   // Handle game launch with animations
-  const handleLaunchGame = e => {
+  const handleLaunchGame = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
@@ -157,7 +159,7 @@ export default function Home() {
 
     // Create circular burst of bullets
     for (let i = 0; i < 12; i++) {
-      const angle = Math.PI * 2 * i / 12;
+      const angle = (Math.PI * 2 * i) / 12;
       setTimeout(() => {
         createBullet(centerX, centerY, angle);
       }, i * 50);
@@ -167,6 +169,24 @@ export default function Home() {
     setTimeout(() => {
       setShowGame(true);
     }, 600);
+  };
+
+  // Handle wallet connection
+  const handleConnectWallet = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    // Create small explosion at button position
+    createExplosion(centerX, centerY);
+
+    // Connect wallet
+    login();
+  };
+
+  // Handle wallet disconnect
+  const handleDisconnectWallet = () => {
+    logout();
   };
 
   // Title letter animation
@@ -194,6 +214,69 @@ export default function Home() {
       {/* Overlay to darken slightly and enhance contrast */}
       <div className="absolute inset-0 bg-black/10" />
 
+      {/* Wallet Button */}
+      <div className="absolute top-6 right-6 z-50">
+        {!ready ? (
+          <div className="px-4 py-2 rounded-lg bg-gray-700 text-white opacity-70">
+            Loading...
+          </div>
+        ) : authenticated ? (
+          <div className="flex flex-col items-end">
+            <motion.div
+              className="px-4 py-2 rounded-lg bg-green-700 text-white mb-2 flex items-center"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <span className="max-w-[150px] truncate mr-2">
+                {address
+                  ? `${address.slice(0, 6)}...${address.slice(-4)}`
+                  : "Connected"}
+              </span>
+              {balance && (
+                <span className="text-xs px-2 py-1 bg-green-800 rounded-md">
+                  {parseFloat(balance.formatted).toFixed(4)} {balance.symbol}
+                </span>
+              )}
+            </motion.div>
+            <motion.button
+              className="px-3 py-1 rounded-lg bg-red-700 text-white text-sm"
+              onClick={handleDisconnectWallet}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              Disconnect
+            </motion.button>
+          </div>
+        ) : (
+          <motion.button
+            className="px-4 py-2 rounded-lg bg-green-700 text-white flex items-center"
+            onClick={handleConnectWallet}
+            whileHover={{
+              scale: 1.05,
+              boxShadow: "0 0 10px rgba(74, 222, 128, 0.7)",
+            }}
+            whileTap={{ scale: 0.95 }}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" className="mr-2">
+              <path
+                d="M4 4C4 2.89543 4.89543 2 6 2H18C19.1046 2 20 2.89543 20 4V8C20 9.10457 19.1046 10 18 10H6C4.89543 10 4 9.10457 4 8V4Z"
+                fill="currentColor"
+              />
+              <path
+                d="M4 14C4 12.8954 4.89543 12 6 12H18C19.1046 12 20 12.8954 20 14V20C20 21.1046 19.1046 22 18 22H6C4.89543 22 4 21.1046 4 20V14Z"
+                fill="currentColor"
+              />
+              <circle cx="12" cy="16" r="2" fill="white" />
+            </svg>
+            Connect Wallet
+          </motion.button>
+        )}
+      </div>
+
       {/* Game Title with Letter Animation */}
       <motion.div
         className="absolute top-1/4 left-0 right-0 text-center"
@@ -209,7 +292,7 @@ export default function Home() {
           transition={{
             duration: 0.8,
             delay: 0.3,
-            ease: "easeOut"
+            ease: "easeOut",
           }}
         >
           <Image
@@ -223,7 +306,7 @@ export default function Home() {
         </motion.div>
 
         <div className="flex justify-center items-center">
-          {letters.map((letter, index) =>
+          {letters.map((letter, index) => (
             <motion.span
               key={index}
               className="text-7xl font-extrabold text-white inline-block mx-1"
@@ -234,8 +317,8 @@ export default function Home() {
                 textShadow: [
                   "0 0 7px rgba(74, 222, 128, 0.8), 0 0 10px rgba(74, 222, 128, 0.5)",
                   "0 0 10px rgba(74, 222, 128, 1), 0 0 15px rgba(74, 222, 128, 0.8)",
-                  "0 0 7px rgba(74, 222, 128, 0.8), 0 0 10px rgba(74, 222, 128, 0.5)"
-                ]
+                  "0 0 7px rgba(74, 222, 128, 0.8), 0 0 10px rgba(74, 222, 128, 0.5)",
+                ],
               }}
               transition={{
                 delay: index * 0.1,
@@ -243,13 +326,13 @@ export default function Home() {
                 textShadow: {
                   duration: 2,
                   repeat: Infinity,
-                  repeatType: "reverse"
-                }
+                  repeatType: "reverse",
+                },
               }}
             >
               {letter}
             </motion.span>
-          )}
+          ))}
         </div>
         <motion.p
           className="text-4xl font-bold text-green-600 mt-2"
@@ -267,10 +350,31 @@ export default function Home() {
         >
           Powered by $NOOT
         </motion.p>
+
+        {/* Display connected wallet address if authenticated */}
+        {authenticated && privyUser && (
+          <motion.div
+            className="mt-3 inline-block px-4 py-2 bg-green-900/60 rounded-lg border border-green-500"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1.5, duration: 0.5 }}
+          >
+            <p className="text-green-300 text-lg">
+              Ready to play,{" "}
+              {privyUser.wallet?.address
+                ? `${privyUser.wallet.address.slice(
+                    0,
+                    6
+                  )}...${privyUser.wallet.address.slice(-4)}`
+                : "Player"}
+              !
+            </p>
+          </motion.div>
+        )}
       </motion.div>
 
       {/* Flying bullets */}
-      {bullets.map(bullet =>
+      {bullets.map((bullet) => (
         <motion.div
           key={bullet.id}
           className="absolute rounded-full bg-yellow-400"
@@ -280,7 +384,7 @@ export default function Home() {
             width: bullet.size,
             height: bullet.size * 0.6,
             transform: `rotate(${Math.atan2(bullet.vy, bullet.vx)}rad)`,
-            boxShadow: "0 0 5px rgba(255, 222, 0, 0.8)"
+            boxShadow: "0 0 5px rgba(255, 222, 0, 0.8)",
           }}
         >
           {/* Bullet trail */}
@@ -289,14 +393,14 @@ export default function Home() {
             style={{
               width: bullet.size * 3,
               backgroundColor: "rgba(255, 222, 0, 0.7)",
-              transformOrigin: "right center"
+              transformOrigin: "right center",
             }}
           />
         </motion.div>
-      )}
+      ))}
 
       {/* Explosion particles */}
-      {particles.map(particle =>
+      {particles.map((particle) => (
         <motion.div
           key={particle.id}
           className="absolute rounded-full z-20"
@@ -305,60 +409,70 @@ export default function Home() {
             top: particle.y,
             width: particle.size,
             height: particle.size,
-            backgroundColor: particle.color
+            backgroundColor: particle.color,
           }}
           initial={{ opacity: 1 }}
           animate={{ opacity: particle.life / 50 }}
         />
-      )}
+      ))}
 
       {/* Launch Game Button */}
       <div className="absolute left-0 right-0 bottom-32 flex justify-center">
         <motion.button
-          className={`relative px-10 py-5 text-2xl font-bold rounded-lg ${isHovering
-            ? "bg-green-600"
-            : "bg-green-700"} text-white shadow-lg transform transition-all border-2 border-green-500`}
+          className={`relative px-10 py-5 text-2xl font-bold rounded-lg ${
+            !authenticated
+              ? "bg-gray-700 cursor-not-allowed"
+              : isHovering
+              ? "bg-green-600"
+              : "bg-green-700"
+          } text-white shadow-lg transform transition-all border-2 ${
+            authenticated ? "border-green-500" : "border-gray-600"
+          }`}
           initial={{ opacity: 0, y: 50 }}
           animate={{
             opacity: 1,
             y: 0,
-            boxShadow: isHovering
-              ? "0 0 20px rgba(74, 222, 128, 0.8)"
-              : "0 0 10px rgba(74, 222, 128, 0.5)"
+            boxShadow:
+              authenticated && isHovering
+                ? "0 0 20px rgba(74, 222, 128, 0.8)"
+                : "0 0 10px rgba(74, 222, 128, 0.5)",
           }}
           transition={{
             delay: 1.5,
             duration: 0.8,
             boxShadow: {
-              duration: 0.3
-            }
+              duration: 0.3,
+            },
           }}
           whileHover={{
-            scale: 1.05
+            scale: authenticated ? 1.05 : 1,
           }}
-          whileTap={{ scale: 0.95 }}
+          whileTap={{ scale: authenticated ? 0.95 : 1 }}
           onMouseEnter={() => setIsHovering(true)}
           onMouseLeave={() => setIsHovering(false)}
-          onClick={handleLaunchGame}
+          onClick={authenticated ? handleLaunchGame : null}
+          disabled={!authenticated}
         >
           {/* Button Glow Effect */}
-          <motion.div
-            className="absolute inset-0 rounded-lg"
-            animate={{
-              boxShadow: isHovering
-                ? [
-                    "0 0 5px rgba(34, 197, 94, 0.7) inset",
-                    "0 0 20px rgba(34, 197, 94, 0.5) inset",
-                    "0 0 5px rgba(34, 197, 94, 0.7) inset"
-                  ]
-                : [
-                    "0 0 0px rgba(34, 197, 94, 0) inset",
-                    "0 0 5px rgba(34, 197, 94, 0.3) inset",
-                    "0 0 0px rgba(34, 197, 94, 0) inset"
-                  ]
-            }}
-            transition={{ duration: 1.5, repeat: Infinity }}
-          />
+          {authenticated && (
+            <motion.div
+              className="absolute inset-0 rounded-lg"
+              animate={{
+                boxShadow: isHovering
+                  ? [
+                      "0 0 5px rgba(34, 197, 94, 0.7) inset",
+                      "0 0 20px rgba(34, 197, 94, 0.5) inset",
+                      "0 0 5px rgba(34, 197, 94, 0.7) inset",
+                    ]
+                  : [
+                      "0 0 0px rgba(34, 197, 94, 0) inset",
+                      "0 0 5px rgba(34, 197, 94, 0.3) inset",
+                      "0 0 0px rgba(34, 197, 94, 0) inset",
+                    ],
+              }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+            />
+          )}
 
           {/* Button Content with Icon */}
           <div className="flex items-center justify-center">
@@ -367,7 +481,9 @@ export default function Home() {
               height="30"
               viewBox="0 0 24 24"
               className="mr-3"
-              animate={{ rotate: isHovering ? [0, -15, 0, 15, 0] : 0 }}
+              animate={{
+                rotate: authenticated && isHovering ? [0, -15, 0, 15, 0] : 0,
+              }}
               transition={{ duration: 0.5, times: [0, 0.2, 0.5, 0.8, 1] }}
             >
               <path
@@ -378,10 +494,61 @@ export default function Home() {
                 strokeLinejoin="round"
               />
             </motion.svg>
-            LAUNCH GAME
+            {authenticated ? "LAUNCH GAME" : "CONNECT WALLET TO PLAY"}
           </div>
         </motion.button>
       </div>
+
+      {/* Connect Wallet Button (shown if not authenticated) */}
+      {!authenticated && (
+        <div className="absolute left-0 right-0 bottom-16 flex justify-center">
+          <motion.button
+            className="relative px-8 py-3 text-lg font-bold rounded-lg bg-green-700 text-white shadow-lg transform transition-all border-2 border-green-500"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{
+              opacity: 1,
+              y: 0,
+              boxShadow: "0 0 10px rgba(74, 222, 128, 0.5)",
+            }}
+            transition={{ delay: 1.8, duration: 0.5 }}
+            whileHover={{
+              scale: 1.05,
+              boxShadow: "0 0 15px rgba(74, 222, 128, 0.7)",
+            }}
+            whileTap={{ scale: 0.95 }}
+            onClick={handleConnectWallet}
+          >
+            <div className="flex items-center justify-center">
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                className="mr-2"
+              >
+                <rect
+                  x="2"
+                  y="4"
+                  width="20"
+                  height="16"
+                  rx="2"
+                  stroke="white"
+                  strokeWidth="2"
+                />
+                <circle cx="12" cy="14" r="2" fill="white" />
+                <path
+                  d="M8 8H16"
+                  stroke="white"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+              CONNECT WALLET
+            </div>
+          </motion.button>
+        </div>
+      )}
 
       {/* Gun silhouettes on the sides */}
       <motion.div
@@ -407,15 +574,15 @@ export default function Home() {
         <motion.div
           className="flex justify-center"
           animate={{
-            y: [0, -5, 0]
+            y: [0, -5, 0],
           }}
           transition={{
             duration: 2,
             repeat: Infinity,
-            ease: "easeInOut"
+            ease: "easeInOut",
           }}
         >
-          {Array.from({ length: 20 }).map((_, i) =>
+          {Array.from({ length: 20 }).map((_, i) => (
             <motion.div
               key={i}
               className="w-6 h-3 bg-green-700 rounded-sm mx-1 border border-green-500"
@@ -424,16 +591,16 @@ export default function Home() {
                 scale: [
                   i % 3 === 0 ? 1.2 : 1,
                   i % 3 === 0 ? 1 : 1,
-                  i % 3 === 0 ? 1.2 : 1
-                ]
+                  i % 3 === 0 ? 1.2 : 1,
+                ],
               }}
               transition={{
                 duration: 1.5,
                 repeat: Infinity,
-                delay: i * 0.1 % 1.5
+                delay: (i * 0.1) % 1.5,
               }}
             />
-          )}
+          ))}
         </motion.div>
       </div>
     </div>
