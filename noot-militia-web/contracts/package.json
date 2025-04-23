@@ -9,6 +9,7 @@
     "deploy": "hardhat run ./scripts/deploy.ts",
     "deploy-erc20": "hardhat run ./scripts/deploy-erc20.ts",
     "deploy-nft": "hardhat run ./scripts/deploy-nft.ts",
+    "deploy-paymaster": "hardhat deploy-zksync --script payMasterDeploy.ts",
     "interact": "hardhat run ./scripts/interact.ts",
     "compile": "hardhat compile",
     "clean": "hardhat clean"

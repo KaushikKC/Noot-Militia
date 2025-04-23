@@ -272,5 +272,5 @@ function loadPrivateKeyFromHardhatConfig() {
   }
 }
 export default async function () {
-  await deployContract("MyPaymaster");
+  await deployContract("Paymaster");
 }

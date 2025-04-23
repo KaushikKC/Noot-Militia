@@ -57,9 +57,9 @@ Built using JavaScript, WebSockets, and integrated with Abstract Smart Accounts 
 
 ## 🔐 Deployed Contract Addresses (Abstract Testnet)
 
-| Contract | Address | Network |
+| Contract | Address Links | Network |
 |----------|---------|---------|
-| PayMaster | 0x1234567890123456789012345678901234567890 | Abstract Testnet |
+| PayMaster | https://explorer.testnet.abs.xyz/address/0x498f28B0AD8c17c5A3cB05B88680A03726933D0F | Abstract Testnet |
 | GameRewards | 0x0987654321098765432109876543210987654321 | Abstract Testnet |
 | NootToken | 0xabcdef1234567890abcdef1234567890abcdef12 | Abstract Testnet |
 
