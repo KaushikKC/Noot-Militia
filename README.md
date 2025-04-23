@@ -19,7 +19,7 @@ Built using JavaScript, WebSockets, and integrated with Abstract Smart Accounts 
 - 🔗 Blockchain:
   - Abstract SDK (Smart Accounts, Paymaster)
   - NOOT Token (ERC20 memecoin)
-  - Solidity Smart Contracts (Base or Testnet)
+  - Solidity Smart Contracts (Abstract Testnet)
 
 ---
 
