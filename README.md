@@ -56,5 +56,5 @@ Built using JavaScript, WebSockets, and integrated with Abstract Smart Accounts 
 | Factory Contract | [0xC2D2c621f48ebded2B4C30Cd93132deFc3D8Ef09](https://explorer.testnet.abs.xyz/address/0xC2D2c621f48ebded2B4C30Cd93132deFc3D8Ef09) | Abstract Testnet |
 | PayMaster | [0x498f28B0AD8c17c5A3cB05B88680A03726933D0F](https://explorer.testnet.abs.xyz/address/0x498f28B0AD8c17c5A3cB05B88680A03726933D0F) | Abstract Testnet |
 | GameMarketPlace Contract | [0x1eC4d1886A29d8fA02F7a701f211BBDA41CF502F](https://explorer.testnet.abs.xyz/address/0x1eC4d1886A29d8fA02F7a701f211BBDA41CF502F) | Abstract Testnet |
-| GameRewards | 0x0987654321098765432109876543210987654321 | Abstract Testnet |
-| NootToken | 0xabcdef1234567890abcdef1234567890abcdef12 | Abstract Testnet |
+| GameRewards |  | Abstract Testnet |
+| NootToken (Official Testnet Token) | [0x3d8b869eb751b63b7077a0a93d6b87a54e6c8f56](https://sepolia.abscan.org/token/0x3d8b869eb751b63b7077a0a93d6b87a54e6c8f56?a=0x783E8D331dDC7503AECD94308F30130Bc8dB3181) | Abstract Testnet |
