@@ -11,7 +11,8 @@ import { TransactionRequest } from "zksync-ethers/build/types";
 import "@matterlabs/hardhat-zksync-verify/dist/src/type-extensions";
 import "@matterlabs/hardhat-zksync-node/dist/type-extensions";
 
-// An example of a deploy script that will deploy and call a simple contract.
+
+// This script deploys an account implementation and a factory contract 
 export default async function deploy(hre: HardhatRuntimeEnvironment) {
   console.log(`Running deploy script...`);
 

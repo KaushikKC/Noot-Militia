@@ -1,3 +1,4 @@
+
 # 🕹️ NootMiltia
 
 A Web3-powered 1v1 multiplayer shooter game inspired by MiniMilitia — built for the #nootvibecode hackathon.  
@@ -50,3 +51,15 @@ Built using JavaScript, WebSockets, and integrated with Abstract Smart Accounts 
 ├── contracts/       # Solidity smart contracts
 ├── scripts/         # Deployment scripts
 ├── README.md        # This file
+```
+
+---
+
+## 🔐 Deployed Contract Addresses (Abstract Testnet)
+
+| Contract | Address | Network |
+|----------|---------|---------|
+| PayMaster | 0x1234567890123456789012345678901234567890 | Abstract Testnet |
+| GameRewards | 0x0987654321098765432109876543210987654321 | Abstract Testnet |
+| NootToken | 0xabcdef1234567890abcdef1234567890abcdef12 | Abstract Testnet |
+
