@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
@@ -38,14 +37,15 @@ contract GameAssetMarketplace is ERC721URIStorage, Ownable {
     event AssetCreated(uint256 indexed tokenId, string name, AssetType assetType, uint256 price);
     event AssetPurchased(uint256 indexed tokenId, address indexed buyer, uint256 price);
     event PayMasterUpdated(address indexed oldPayMaster, address indexed newPayMaster);
+    event DebugStep(string message, uint256 tokenId);
     
     /**
-     * @dev Constructor initializes the contract with a name, symbol, and payMaster address
-     * @param _payMaster Address to receive payments for purchased assets
+     * @dev Constructor initializes the contract with a name and symbol
+     * PayMaster can be set later using setPayMaster function
      */
-    constructor(address _payMaster) ERC721("GameAssets", "GASSET") Ownable(msg.sender) {
-        require(_payMaster != address(0), "PayMaster address cannot be zero");
-        payMaster = _payMaster;
+    constructor() ERC721("GameAssets", "GASSET") Ownable(msg.sender) {
+        // Initialize the token counter to 0
+        _currentTokenId = 0;
     }
     
     /**
@@ -74,13 +74,19 @@ contract GameAssetMarketplace is ERC721URIStorage, Ownable {
         uint256 price,
         string memory metadataURI
     ) external onlyOwner returns (uint256) {
+        emit DebugStep("Starting asset creation", 0);
+        
         // Increment token ID
         _currentTokenId += 1;
         uint256 newTokenId = _currentTokenId;
+        emit DebugStep("Token ID incremented", newTokenId);
         
-        // Mint the token
-        _safeMint(address(this), newTokenId);
+        // Mint the token to msg.sender instead of the contract
+        _safeMint(msg.sender, newTokenId);
+        emit DebugStep("Token minted", newTokenId);
+        
         _setTokenURI(newTokenId, metadataURI);
+        emit DebugStep("Token URI set", newTokenId);
         
         // Create and store the asset details
         gameAssets[newTokenId] = GameAsset({
@@ -91,6 +97,7 @@ contract GameAssetMarketplace is ERC721URIStorage, Ownable {
             price: price,
             isForSale: true
         });
+        emit DebugStep("Asset details stored", newTokenId);
         
         emit AssetCreated(newTokenId, name, assetType, price);
         return newTokenId;
@@ -102,17 +109,21 @@ contract GameAssetMarketplace is ERC721URIStorage, Ownable {
      * @param userSmartAccountAddress Address of the user's smart account to receive the NFT
      */
     function purchaseAsset(uint256 tokenId, address userSmartAccountAddress) external payable {
+        // Check if PayMaster is set
+        require(payMaster != address(0), "PayMaster not set");
+        
         GameAsset storage asset = gameAssets[tokenId];
         require(asset.id == tokenId, "Asset does not exist");
         require(asset.isForSale, "Asset is not for sale");
         require(msg.value >= asset.price, "Insufficient payment");
         require(userSmartAccountAddress != address(0), "Invalid smart account address");
         
-        // Mark as sold
+        // Mark as sol
         asset.isForSale = false;
         
-        // Transfer the NFT from contract to the user's smart account
-        _transfer(address(this), userSmartAccountAddress, tokenId);
+        // Transfer the NFT from the owner to the user's smart account
+        address tokenOwner = ownerOf(tokenId);
+        _transfer(tokenOwner, userSmartAccountAddress, tokenId);
         
         // Forward the payment to PayMaster
         (bool success, ) = payMaster.call{value: msg.value}("");
@@ -167,7 +178,10 @@ contract GameAssetMarketplace is ERC721URIStorage, Ownable {
         uint256 balance = address(this).balance;
         require(balance > 0, "No ETH to withdraw");
         
-        (bool success, ) = payMaster.call{value: balance}("");
+        // If PayMaster is not set, send to owner
+        address recipient = payMaster != address(0) ? payMaster : owner();
+        
+        (bool success, ) = recipient.call{value: balance}("");
         require(success, "Withdrawal failed");
     }
 }
