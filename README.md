@@ -53,9 +53,9 @@ Built using JavaScript, WebSockets, and integrated with Abstract Smart Accounts 
 
 | Contract | Address | Network |
 |----------|---------|---------|
-| Factory Contract | [0xC2D2c621f48ebded2B4C30Cd93132deFc3D8Ef09](https://explorer.testnet.abs.xyz/address/0xC2D2c621f48ebded2B4C30Cd93132deFc3D8Ef09) | Abstract Testnet |
-| PayMaster | [0x498f28B0AD8c17c5A3cB05B88680A03726933D0F](https://explorer.testnet.abs.xyz/address/0x498f28B0AD8c17c5A3cB05B88680A03726933D0F) | Abstract Testnet |
+| SmartAccount Factory Contract | [0xC2D2c621f48ebded2B4C30Cd93132deFc3D8Ef09](https://explorer.testnet.abs.xyz/address/0xC2D2c621f48ebded2B4C30Cd93132deFc3D8Ef09) | Abstract Testnet |
+| PayMaster Contract| [0x498f28B0AD8c17c5A3cB05B88680A03726933D0F](https://explorer.testnet.abs.xyz/address/0x498f28B0AD8c17c5A3cB05B88680A03726933D0F) | Abstract Testnet |
 | GameMarketPlace Contract | [0x1eC4d1886A29d8fA02F7a701f211BBDA41CF502F](https://explorer.testnet.abs.xyz/address/0x1eC4d1886A29d8fA02F7a701f211BBDA41CF502F) | Abstract Testnet |
-| NootRewardsEscrow | [0x15E213E225a43237e6F9172cEa599718d9E9Af55](https://explorer.testnet.abs.xyz/address/0x15E213E225a43237e6F9172cEa599718d9E9Af55) | Abstract Testnet |
-| NootGameStake | [0x800a003Fe30F2cfF1E7290D912Da621662B9D6c4](https://explorer.testnet.abs.xyz/address/0x800a003Fe30F2cfF1E7290D912Da621662B9D6c4) | Abstract Testnet |
-| NootToken (Official Testnet Token) | [0x3d8b869eb751b63b7077a0a93d6b87a54e6c8f56](https://sepolia.abscan.org/token/0x3d8b869eb751b63b7077a0a93d6b87a54e6c8f56?a=0x783E8D331dDC7503AECD94308F30130Bc8dB3181) | Abstract Testnet |
+| NootRewardsEscrow Contract| [0x15E213E225a43237e6F9172cEa599718d9E9Af55](https://explorer.testnet.abs.xyz/address/0x15E213E225a43237e6F9172cEa599718d9E9Af55) | Abstract Testnet |
+| NootGameStake Contract| [0x800a003Fe30F2cfF1E7290D912Da621662B9D6c4](https://explorer.testnet.abs.xyz/address/0x800a003Fe30F2cfF1E7290D912Da621662B9D6c4) | Abstract Testnet |
+| NootToken (Official Testnet Token Contract) | [0x3d8b869eb751b63b7077a0a93d6b87a54e6c8f56](https://sepolia.abscan.org/token/0x3d8b869eb751b63b7077a0a93d6b87a54e6c8f56?a=0x783E8D331dDC7503AECD94308F30130Bc8dB3181) | Abstract Testnet |
