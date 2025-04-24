@@ -1,0 +1,520 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_nootToken",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      }
+    ],
+    "name": "OwnableInvalidOwner",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "OwnableUnauthorizedAccount",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "gameId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "winner",
+        "type": "address"
+      }
+    ],
+    "name": "GameCompleted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "gameId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "stakeAmount",
+        "type": "uint256"
+      }
+    ],
+    "name": "GameCreated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "gameId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "player1",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "player2",
+        "type": "address"
+      }
+    ],
+    "name": "GameStaked",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "gameId",
+        "type": "uint256"
+      }
+    ],
+    "name": "GameStarted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "previousOwner",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "newOwner",
+        "type": "address"
+      }
+    ],
+    "name": "OwnershipTransferred",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "gameId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "player",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "smartAccount",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "PlayerStaked",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_gameId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "_winner",
+        "type": "address"
+      }
+    ],
+    "name": "completeGame",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_stakeAmount",
+        "type": "uint256"
+      }
+    ],
+    "name": "createGame",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "games",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "stakeAmount",
+        "type": "uint256"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "playerAddress",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "smartAccount",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "stakedAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "isStaked",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct NootGameStake.PlayerInfo",
+        "name": "player1",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "playerAddress",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "smartAccount",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "stakedAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "isStaked",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct NootGameStake.PlayerInfo",
+        "name": "player2",
+        "type": "tuple"
+      },
+      {
+        "internalType": "enum NootGameStake.GameState",
+        "name": "state",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint256",
+        "name": "createdAt",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_gameId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getGamePlayers",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "player1Address",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "player1Smart",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "player2Address",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "player2Smart",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_gameId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getGameState",
+    "outputs": [
+      {
+        "internalType": "enum NootGameStake.GameState",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_gameId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getStakeAmount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "nootToken",
+    "outputs": [
+      {
+        "internalType": "contract IERC20",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "owner",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "renounceOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "rewardsContract",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_rewardsContract",
+        "type": "address"
+      }
+    ],
+    "name": "setRewardsContract",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_gameId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "_playerAddress",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_smartAccount",
+        "type": "address"
+      }
+    ],
+    "name": "stake",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_gameId",
+        "type": "uint256"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "playerAddress",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "smartAccount",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "stakedAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "isStaked",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct NootGameStake.PlayerInfo",
+        "name": "_player1",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "playerAddress",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "smartAccount",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "stakedAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "isStaked",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct NootGameStake.PlayerInfo",
+        "name": "_player2",
+        "type": "tuple"
+      }
+    ],
+    "name": "stakeToJoinGame",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newOwner",
+        "type": "address"
+      }
+    ],
+    "name": "transferOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]
